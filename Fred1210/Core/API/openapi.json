@@ -1,0 +1,619 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Fred1210 Agent API",
+    "description": "Contract consumed by native clients (fred1210-ios, fred1210-android) and the legacy React Native app (fred1210-mobile). Covers chat, dashboard, tasks, transport health, and voice.",
+    "version": "1.0.0",
+    "contact": {
+      "name": "Ben Receveur",
+      "email": "receveur123@gmail.com"
+    }
+  },
+  "servers": [
+    {
+      "url": "https://bobs-mac-mini.tail5a2996.ts.net",
+      "description": "Tailscale-served Mac Mini (production)"
+    },
+    {
+      "url": "http://127.0.0.1:56366",
+      "description": "Local development"
+    }
+  ],
+  "tags": [
+    { "name": "agent", "description": "Agent status and chat endpoints" },
+    { "name": "dashboard", "description": "Aggregated state view" },
+    { "name": "tasks", "description": "Task board CRUD" },
+    { "name": "transport", "description": "Slack and Telegram transport health" },
+    { "name": "voice", "description": "Speech-to-text → agent pipeline → text-to-speech" }
+  ],
+  "paths": {
+    "/api/agent/status": {
+      "get": {
+        "tags": ["agent"],
+        "summary": "Get agent status",
+        "description": "Returns sandbox status, LLM provider list, current tier, and storage availability.",
+        "operationId": "getAgentStatus",
+        "responses": {
+          "200": {
+            "description": "Agent status snapshot",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AgentStatus" }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/chat": {
+      "post": {
+        "tags": ["agent"],
+        "summary": "Send a chat message",
+        "description": "Runs the message through the debug chat endpoint. NOTE: this is the simple path — tool execution requires the full Slack/Telegram pipeline.",
+        "operationId": "postChat",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ChatRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Chat response",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ChatResponse" } }
+            }
+          },
+          "400": { "description": "Invalid request body" },
+          "401": { "description": "Unauthorized" },
+          "413": { "description": "Request body too large" },
+          "500": { "description": "Internal error" }
+        }
+      }
+    },
+    "/api/agent/history": {
+      "get": {
+        "tags": ["agent"],
+        "summary": "Get chat history",
+        "operationId": "getChatHistory",
+        "responses": {
+          "200": {
+            "description": "Message history for the authenticated user",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/HistoryResponse" } }
+            }
+          },
+          "401": { "description": "Unauthorized" },
+          "500": { "description": "Internal error" }
+        }
+      }
+    },
+    "/api/agent/dashboard": {
+      "get": {
+        "tags": ["dashboard"],
+        "summary": "Get aggregated dashboard state",
+        "description": "Subsystems that fail are returned with an `error: 'unavailable'` field so the client can render partially. Always returns 200 unless the request itself is invalid.",
+        "operationId": "getDashboard",
+        "responses": {
+          "200": {
+            "description": "Raw dashboard aggregate",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/DashboardResponse" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/transport/health": {
+      "get": {
+        "tags": ["transport"],
+        "summary": "Get Slack and Telegram transport health",
+        "operationId": "getTransportHealth",
+        "responses": {
+          "200": {
+            "description": "Transport health snapshots",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/TransportHealthResponse" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/tasks": {
+      "get": {
+        "tags": ["tasks"],
+        "summary": "List all tasks",
+        "operationId": "listTasks",
+        "responses": {
+          "200": {
+            "description": "Task list with count",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/TaskListResponse" } }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["tasks"],
+        "summary": "Create a task",
+        "operationId": "createTask",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateTaskRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Task created",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/TaskWrapper" } }
+            }
+          },
+          "400": { "description": "Invalid payload" }
+        }
+      }
+    },
+    "/api/agent/tasks/{id}": {
+      "get": {
+        "tags": ["tasks"],
+        "summary": "Get a task by ID",
+        "operationId": "getTask",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Task",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Task" } }
+            }
+          },
+          "404": { "description": "Task not found" }
+        }
+      },
+      "patch": {
+        "tags": ["tasks"],
+        "summary": "Update a task",
+        "operationId": "updateTask",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateTaskRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated task",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/TaskWrapper" } }
+            }
+          },
+          "400": { "description": "Invalid payload" },
+          "404": { "description": "Task not found" }
+        }
+      },
+      "delete": {
+        "tags": ["tasks"],
+        "summary": "Delete a task",
+        "operationId": "deleteTask",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Task deleted",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/OkResponse" } }
+            }
+          },
+          "404": { "description": "Task not found" }
+        }
+      }
+    },
+    "/voice/turn": {
+      "post": {
+        "tags": ["voice"],
+        "summary": "Full voice turn (STT → agent → TTS)",
+        "description": "Multipart upload of audio. Returns audio body with metadata in response headers (X-Voice-Transcript, X-Voice-Response, X-Voice-*-Provider, X-Voice-*-Ms).",
+        "operationId": "voiceTurn",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": ["audio"],
+                "properties": {
+                  "audio": { "type": "string", "format": "binary", "description": "Audio file (m4a, mp3, wav, webm, opus)" },
+                  "language": { "type": "string", "description": "BCP-47 language tag, e.g. 'en'" },
+                  "voice": { "type": "string", "description": "TTS voice ID (provider-specific)" },
+                  "format": { "type": "string", "enum": ["mp3", "opus", "wav", "flac"], "default": "mp3" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Synthesized audio response",
+            "headers": {
+              "X-Voice-Transcript": { "schema": { "type": "string" }, "description": "URL-encoded transcript (<=500 chars)" },
+              "X-Voice-Response": { "schema": { "type": "string" }, "description": "URL-encoded response text (<=500 chars)" },
+              "X-Voice-STT-Provider": { "schema": { "type": "string" } },
+              "X-Voice-TTS-Provider": { "schema": { "type": "string" } },
+              "X-Voice-STT-Ms": { "schema": { "type": "integer" } },
+              "X-Voice-Pipeline-Ms": { "schema": { "type": "integer" } },
+              "X-Voice-TTS-Ms": { "schema": { "type": "integer" } },
+              "X-Voice-Total-Ms": { "schema": { "type": "integer" } }
+            },
+            "content": {
+              "audio/mpeg": { "schema": { "type": "string", "format": "binary" } },
+              "audio/opus": { "schema": { "type": "string", "format": "binary" } },
+              "audio/wav": { "schema": { "type": "string", "format": "binary" } },
+              "audio/flac": { "schema": { "type": "string", "format": "binary" } }
+            }
+          },
+          "400": { "description": "Missing or invalid audio" },
+          "401": { "description": "Unauthorized" },
+          "413": { "description": "Audio too large (max 25MB)" },
+          "422": { "description": "No speech detected" },
+          "500": { "description": "Pipeline returned empty response" },
+          "502": { "description": "STT or TTS provider failed" }
+        }
+      }
+    },
+    "/voice/health": {
+      "get": {
+        "tags": ["voice"],
+        "summary": "Check STT and TTS provider configuration",
+        "operationId": "voiceHealth",
+        "responses": {
+          "200": {
+            "description": "Provider availability",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/VoiceHealthResponse" } }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ErrorResponse": {
+        "type": "object",
+        "required": ["error"],
+        "properties": {
+          "error": { "type": "string" }
+        }
+      },
+      "OkResponse": {
+        "type": "object",
+        "required": ["ok"],
+        "properties": {
+          "ok": { "type": "boolean" }
+        }
+      },
+      "AgentStatus": {
+        "type": "object",
+        "required": ["sandbox", "llm", "tier", "storage"],
+        "properties": {
+          "sandbox": {
+            "type": "object",
+            "required": ["status", "processCount"],
+            "properties": {
+              "status": { "type": "string", "enum": ["running", "error", "unknown"] },
+              "processCount": { "type": "integer" }
+            }
+          },
+          "llm": {
+            "type": "object",
+            "required": ["activeProvider", "providers"],
+            "properties": {
+              "activeProvider": { "type": "string" },
+              "providers": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["name", "configured"],
+                  "properties": {
+                    "name": { "type": "string" },
+                    "configured": { "type": "boolean" }
+                  }
+                }
+              }
+            }
+          },
+          "tier": {
+            "type": "object",
+            "required": ["name", "description", "maxSteps", "allowedTools"],
+            "properties": {
+              "name": { "type": "string" },
+              "description": { "type": "string" },
+              "maxSteps": { "type": "integer" },
+              "allowedTools": { "type": "array", "items": { "type": "string" } }
+            }
+          },
+          "storage": {
+            "type": "object",
+            "required": ["available", "hmacConfigured"],
+            "properties": {
+              "available": { "type": "boolean" },
+              "hmacConfigured": { "type": "boolean" }
+            }
+          }
+        }
+      },
+      "ChatRequest": {
+        "type": "object",
+        "required": ["message"],
+        "properties": {
+          "message": { "type": "string", "minLength": 1, "maxLength": 10000 }
+        }
+      },
+      "ChatResponse": {
+        "type": "object",
+        "required": ["response"],
+        "properties": {
+          "response": { "type": "string" },
+          "provider": { "type": "string" },
+          "route": { "type": "string" },
+          "usage": {
+            "type": "object",
+            "properties": {
+              "inputTokens": { "type": "integer" },
+              "outputTokens": { "type": "integer" }
+            }
+          }
+        }
+      },
+      "ChatMessage": {
+        "type": "object",
+        "required": ["role", "content"],
+        "properties": {
+          "role": { "type": "string", "enum": ["user", "assistant", "system"] },
+          "content": { "type": "string" }
+        }
+      },
+      "HistoryResponse": {
+        "type": "object",
+        "required": ["messages"],
+        "properties": {
+          "messages": { "type": "array", "items": { "$ref": "#/components/schemas/ChatMessage" } },
+          "error": { "type": "string" }
+        }
+      },
+      "DashboardResponse": {
+        "type": "object",
+        "description": "All sub-fields are optional because each subsystem catches errors and returns `{ error: 'unavailable' }`.",
+        "properties": {
+          "schedule": {
+            "type": "object",
+            "properties": {
+              "state": { "type": "object", "additionalProperties": true },
+              "reminders": { "type": "array", "items": { "type": "object" } },
+              "error": { "type": "string" }
+            }
+          },
+          "usage": {
+            "type": "object",
+            "properties": {
+              "today": {
+                "type": "object",
+                "properties": {
+                  "requests": { "type": "integer" },
+                  "tokens": { "type": "integer" },
+                  "cost": { "type": "number" },
+                  "errors": { "type": "integer" }
+                }
+              },
+              "weekCost": { "type": "number" },
+              "error": { "type": "string" }
+            }
+          },
+          "tasks": {
+            "type": "object",
+            "properties": {
+              "items": { "type": "array", "items": { "$ref": "#/components/schemas/Task" } },
+              "count": { "type": "integer" },
+              "error": { "type": "string" }
+            }
+          },
+          "team": {
+            "type": "object",
+            "properties": {
+              "total": { "type": "integer" },
+              "active": { "type": "integer" },
+              "degraded": { "type": "integer" },
+              "offline": { "type": "integer" },
+              "error": { "type": "string" }
+            }
+          },
+          "pipelines": {
+            "type": "object",
+            "properties": {
+              "items": { "type": "array", "items": { "type": "object", "additionalProperties": true } },
+              "count": { "type": "integer" },
+              "error": { "type": "string" }
+            }
+          },
+          "memory": {
+            "type": "object",
+            "properties": {
+              "facts": { "type": "integer" },
+              "conversations": { "type": "integer" },
+              "lastActive": { "type": "string", "format": "date-time" },
+              "error": { "type": "string" }
+            }
+          },
+          "upstream": {
+            "type": "object",
+            "properties": {
+              "monitor": { "type": "object", "additionalProperties": true },
+              "shannon": { "type": "object", "additionalProperties": true },
+              "openclaw": { "type": "object", "additionalProperties": true },
+              "nemoclaw": { "type": "object", "additionalProperties": true },
+              "error": { "type": "string" }
+            }
+          },
+          "nemo": {
+            "type": "object",
+            "properties": {
+              "summary": {
+                "type": "object",
+                "properties": {
+                  "plannerSuccessRate": { "type": "number" },
+                  "plannerFallbackRate": { "type": "number" },
+                  "councilReviewSuccessRate": { "type": "number" },
+                  "daysTracked": { "type": "integer" }
+                }
+              },
+              "benchmark": {
+                "type": "object",
+                "properties": {
+                  "lastRunAt": { "type": "string", "nullable": true },
+                  "status": { "type": "string" }
+                }
+              }
+            }
+          }
+        }
+      },
+      "TransportHealth": {
+        "type": "object",
+        "required": ["transport", "queuePending", "degraded", "degradedReasons", "consecutiveFailures"],
+        "properties": {
+          "transport": { "type": "string", "enum": ["slack", "telegram"] },
+          "queuePending": { "type": "integer" },
+          "degraded": { "type": "boolean" },
+          "degradedReasons": { "type": "array", "items": { "type": "string" } },
+          "consecutiveFailures": { "type": "integer" },
+          "lastSuccessAt": { "type": "string", "nullable": true },
+          "lastFailureAt": { "type": "string", "nullable": true }
+        }
+      },
+      "TransportHealthResponse": {
+        "type": "object",
+        "required": ["transports"],
+        "properties": {
+          "transports": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/TransportHealth" }
+          }
+        }
+      },
+      "Task": {
+        "type": "object",
+        "required": ["id", "title", "status", "priority", "createdAt", "updatedAt"],
+        "properties": {
+          "id": { "type": "string" },
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "status": { "type": "string", "enum": ["inbox", "todo", "in-progress", "review", "done"] },
+          "priority": { "type": "string", "enum": ["critical", "high", "medium", "low"] },
+          "assignee": { "type": "string" },
+          "tags": { "type": "array", "items": { "type": "string" } },
+          "dueDate": { "type": "string", "format": "date-time" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "TaskListResponse": {
+        "type": "object",
+        "required": ["tasks", "count"],
+        "properties": {
+          "tasks": { "type": "array", "items": { "$ref": "#/components/schemas/Task" } },
+          "count": { "type": "integer" }
+        }
+      },
+      "TaskWrapper": {
+        "type": "object",
+        "required": ["task"],
+        "properties": {
+          "task": { "$ref": "#/components/schemas/Task" }
+        }
+      },
+      "CreateTaskRequest": {
+        "type": "object",
+        "required": ["title"],
+        "properties": {
+          "title": { "type": "string", "minLength": 1 },
+          "description": { "type": "string" },
+          "status": { "type": "string", "enum": ["inbox", "todo", "in-progress", "review", "done"] },
+          "priority": { "type": "string", "enum": ["critical", "high", "medium", "low"] },
+          "assignee": { "type": "string" },
+          "tags": { "type": "array", "items": { "type": "string" } },
+          "dueDate": { "type": "string", "format": "date-time" }
+        }
+      },
+      "UpdateTaskRequest": {
+        "type": "object",
+        "description": "All fields optional — only supplied fields are updated.",
+        "properties": {
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "status": { "type": "string", "enum": ["inbox", "todo", "in-progress", "review", "done"] },
+          "priority": { "type": "string", "enum": ["critical", "high", "medium", "low"] },
+          "assignee": { "type": "string" },
+          "tags": { "type": "array", "items": { "type": "string" } },
+          "dueDate": { "type": "string", "format": "date-time" }
+        }
+      },
+      "VoiceHealthResponse": {
+        "type": "object",
+        "required": ["ok", "stt", "tts"],
+        "properties": {
+          "ok": { "type": "boolean" },
+          "stt": {
+            "type": "object",
+            "properties": {
+              "groq": { "type": "boolean" },
+              "openai": { "type": "boolean" },
+              "preferred": { "type": "string", "nullable": true }
+            }
+          },
+          "tts": {
+            "type": "object",
+            "properties": {
+              "groq": { "type": "boolean" },
+              "openai": { "type": "boolean" },
+              "elevenlabs": { "type": "boolean" },
+              "preferred": { "type": "string", "nullable": true }
+            }
+          }
+        }
+      }
+    }
+  }
+}

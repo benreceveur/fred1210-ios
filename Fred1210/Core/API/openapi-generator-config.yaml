@@ -1,0 +1,13 @@
+# swift-openapi-generator configuration.
+#
+# The SPM plugin reads this at build time and generates Swift types and
+# a `Client` struct from openapi.json into the build's derived sources.
+# Output is NOT committed — it's regenerated on every build.
+#
+# To bump the spec version: copy a newer openapi.json from a tagged release
+# of fred1210-api-spec into this directory and rebuild.
+generate:
+  - types
+  - client
+accessModifier: internal
+namingStrategy: idiomatic

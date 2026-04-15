@@ -1,0 +1,25 @@
+# Xcode
+*.xcodeproj/xcuserdata
+*.xcworkspace/xcuserdata
+DerivedData/
+build/
+.build/
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# xcodegen generated — regenerate via `xcodegen generate`
+Fred1210.xcodeproj
+
+# macOS
+.DS_Store
+
+# SPM
+Package.resolved
+.swiftpm/
+
+# Fastlane (later)
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots
+fastlane/test_output

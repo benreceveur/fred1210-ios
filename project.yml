@@ -1,0 +1,75 @@
+name: Fred1210
+options:
+  bundleIdPrefix: com.relayforgelabs
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+  generateEmptyDirectories: true
+settings:
+  base:
+    SWIFT_VERSION: "5.10"
+    DEVELOPMENT_TEAM: "HSG4U9S69K"
+    MARKETING_VERSION: "2.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    ENABLE_USER_SCRIPT_SANDBOXING: NO
+    CODE_SIGN_STYLE: Automatic
+packages:
+  swift-openapi-runtime:
+    url: https://github.com/apple/swift-openapi-runtime
+    from: 1.6.0
+  swift-openapi-urlsession:
+    url: https://github.com/apple/swift-openapi-urlsession
+    from: 1.0.2
+  KeychainAccess:
+    url: https://github.com/kishikawakatsumi/KeychainAccess
+    from: 4.2.2
+targets:
+  Fred1210:
+    type: application
+    platform: iOS
+    sources:
+      - path: Fred1210
+        excludes:
+          - "**/.DS_Store"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.relayforgelabs.fred1210
+        INFOPLIST_KEY_CFBundleDisplayName: Fred1210
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
+        INFOPLIST_KEY_NSMicrophoneUsageDescription: "Fred needs microphone access for voice conversations"
+        INFOPLIST_KEY_UIBackgroundModes: "remote-notification audio"
+        TARGETED_DEVICE_FAMILY: "1"
+    dependencies:
+      - package: swift-openapi-runtime
+        product: OpenAPIRuntime
+      - package: swift-openapi-urlsession
+        product: OpenAPIURLSession
+      - package: KeychainAccess
+  Fred1210Tests:
+    type: bundle.unit-test
+    platform: iOS
+    sources: Fred1210Tests
+    dependencies:
+      - target: Fred1210
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.relayforgelabs.fred1210.tests
+schemes:
+  Fred1210:
+    build:
+      targets:
+        Fred1210: all
+    test:
+      targets:
+        - Fred1210Tests
+    run:
+      config: Debug
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: Release
