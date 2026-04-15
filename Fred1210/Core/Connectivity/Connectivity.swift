@@ -14,7 +14,7 @@ final class Connectivity: ObservableObject {
     init() {
         monitor.pathUpdateHandler = { [weak self] path in
             let online = path.status == .satisfied
-            DispatchQueue.main.async {
+            Task { @MainActor [weak self] in
                 self?.isOnline = online
             }
         }
