@@ -14,6 +14,9 @@ settings:
     CURRENT_PROJECT_VERSION: "1"
     ENABLE_USER_SCRIPT_SANDBOXING: NO
     CODE_SIGN_STYLE: Automatic
+    GENERATE_INFOPLIST_FILE: YES
+    CODE_SIGNING_ALLOWED: NO
+    CODE_SIGNING_REQUIRED: NO
 packages:
   swift-openapi-runtime:
     url: https://github.com/apple/swift-openapi-runtime
@@ -21,6 +24,9 @@ packages:
   swift-openapi-urlsession:
     url: https://github.com/apple/swift-openapi-urlsession
     from: 1.0.2
+  swift-openapi-generator:
+    url: https://github.com/apple/swift-openapi-generator
+    from: 1.5.0
   KeychainAccess:
     url: https://github.com/kishikawakatsumi/KeychainAccess
     from: 4.2.2
@@ -48,6 +54,9 @@ targets:
       - package: swift-openapi-urlsession
         product: OpenAPIURLSession
       - package: KeychainAccess
+    buildToolPlugins:
+      - plugin: OpenAPIGenerator
+        package: swift-openapi-generator
   Fred1210Tests:
     type: bundle.unit-test
     platform: iOS
