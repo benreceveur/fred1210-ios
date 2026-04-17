@@ -91,7 +91,12 @@ platform :ios do
     key_id = ENV["APP_STORE_CONNECT_API_KEY_ID"]
     issuer_id = ENV["APP_STORE_CONNECT_API_KEY_ISSUER_ID"]
     key_content = ENV["APP_STORE_CONNECT_API_KEY_KEY"]
-    return nil if key_id.nil? || issuer_id.nil? || key_content.nil?
+    # Treat empty strings as absent — keychain `security find-generic-password`
+    # prints nothing to stdout when the item is missing, and `$(...)` captures
+    # that as an empty string, not nil.
+    return nil if key_id.nil? || key_id.strip.empty?
+    return nil if issuer_id.nil? || issuer_id.strip.empty?
+    return nil if key_content.nil? || key_content.strip.empty?
     app_store_connect_api_key(
       key_id: key_id,
       issuer_id: issuer_id,
