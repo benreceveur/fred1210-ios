@@ -3,16 +3,16 @@
   "info": {
     "title": "Fred1210 Agent API",
     "description": "Contract consumed by native clients (fred1210-ios, fred1210-android) and the legacy React Native app (fred1210-mobile). Covers chat, dashboard, tasks, transport health, and voice.",
-    "version": "1.0.0",
-    "contact": {
-      "name": "Ben Receveur",
-      "email": "receveur123@gmail.com"
-    }
+    "version": "1.0.0"
   },
   "servers": [
     {
-      "url": "https://bobs-mac-mini.tail5a2996.ts.net",
-      "description": "Tailscale-served Mac Mini (production)"
+      "url": "{scheme}://{host}",
+      "description": "Tailscale-served Fred host (configured per deployment)",
+      "variables": {
+        "scheme": { "default": "https", "enum": ["https", "http"] },
+        "host": { "default": "fred.example.ts.net", "description": "Your Tailscale hostname running Fred" }
+      }
     },
     {
       "url": "http://127.0.0.1:56366",
