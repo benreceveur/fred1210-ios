@@ -59,18 +59,14 @@ platform :ios do
   end
 
   desc "Archive and upload to TestFlight"
+  #
+  # Build number is managed manually in project.yml (CURRENT_PROJECT_VERSION).
+  # To bump before a release:
+  #   1. Edit project.yml, increment CURRENT_PROJECT_VERSION
+  #   2. Re-run fastlane beta
+  # This avoids the fastlane-plugin-versioning plugin dependency.
   lane :beta do
     api_key = app_store_connect_api_key_from_env_or_nil
-
-    # Bump build number to latest TestFlight + 1 so we never collide.
-    latest = latest_testflight_build_number(
-      api_key: api_key,
-      app_identifier: BUNDLE_ID
-    )
-    increment_build_number_in_xcodeproj(
-      xcodeproj: PROJECT,
-      build_number: (latest + 1).to_s
-    )
 
     build_app(
       project: PROJECT,
@@ -79,7 +75,7 @@ platform :ios do
       output_directory: "build",
       output_name: "Fred1210.ipa",
       export_method: "app-store",
-      xcargs: "-skipPackagePluginValidation -skipMacroValidation",
+      xcargs: "-skipPackagePluginValidation -skipMacroValidation -allowProvisioningUpdates",
       clean: true
     )
 
