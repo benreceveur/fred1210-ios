@@ -19,8 +19,8 @@
 
 default_platform(:ios)
 
-BUNDLE_ID = "com.relayforgelabs.fred1210"
-TEAM_ID = "HSG4U9S69K"
+BUNDLE_ID = ENV["FASTLANE_APP_IDENTIFIER"] || "com.example.fred1210"
+TEAM_ID = ENV["FASTLANE_TEAM_ID"] || "TEAM_ID_HERE"
 SCHEME = "Fred1210"
 PROJECT = "Fred1210.xcodeproj"
 

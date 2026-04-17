@@ -1,8 +1,8 @@
 # fred1210-ios
 
-Native iOS client for [Fred1210](https://github.com/benreceveur/Fred1210) — Swift 5.10+, SwiftUI, iOS 16+.
+Native iOS client for Fred1210 — Swift 5.10+, SwiftUI, iOS 16+.
 
-Replaces the React Native app in [fred1210-mobile](https://github.com/benreceveur/fred1210-mobile) as of version 2.0.0.
+Replaces the React Native app in fred1210-mobile as of version 2.0.0.
 
 ## Architecture
 
@@ -15,6 +15,7 @@ Replaces the React Native app in [fred1210-mobile](https://github.com/benreceveu
 ## Folder layout
 
 ```
+Config/             — per-developer xcconfig (Local.xcconfig is gitignored)
 Fred1210/
   App/              — @main entry, root tab bar, connection banner
   Features/
@@ -31,39 +32,52 @@ Fred1210/
   Resources/
     Assets.xcassets — app icon + launch screen
 Fred1210Tests/      — XCTest unit tests
+fastlane/           — build + TestFlight automation
 ```
 
 ## Build prerequisites
 
-1. **Xcode 15+** (required — not installed on this Mac by default)
+1. **Xcode 16+** (required)
 2. **xcodegen** (`brew install xcodegen`) — generates `Fred1210.xcodeproj` from `project.yml`
-3. **Apple Developer account** — reuses team `HSG4U9S69K` (already set up for the RN app)
+3. **Apple Developer account** — with a valid Team ID for signing and TestFlight
 
-## Generate and open the project
+## First-time setup
+
+See [`fastlane/SETUP.md`](fastlane/SETUP.md) for the full walkthrough. Short version:
 
 ```bash
-cd /Users/bob/fred1210-ios
+# Per-developer config (gitignored)
+cp Config/Local.xcconfig.example Config/Local.xcconfig
+# edit with your DEVELOPMENT_TEAM, FRED_DEFAULT_HOST, PRODUCT_BUNDLE_IDENTIFIER
+
+cp fastlane/.env.local.example fastlane/.env.local
+# edit with your FASTLANE_APPLE_ID, FASTLANE_TEAM_ID, FASTLANE_APP_IDENTIFIER
+
+# Generate + open the project
 xcodegen generate
 open Fred1210.xcodeproj
 ```
 
-The `.xcodeproj` is **not committed** — regenerate it after pulling. See `.gitignore`.
+The `.xcodeproj`, `Config/Local.xcconfig`, and `fastlane/.env.local` are all gitignored. Regenerate the project after every pull.
 
 ## Run tests
 
-In Xcode: `⌘U`.  
-Or from CLI once Xcode is installed:
+In Xcode: `⌘U`.
+Or from CLI:
 ```bash
-xcodebuild test -project Fred1210.xcodeproj -scheme Fred1210 -destination "platform=iOS Simulator,name=iPhone 15"
+xcodebuild test -project Fred1210.xcodeproj -scheme Fred1210 \
+  -destination "platform=iOS Simulator,name=iPhone 17" \
+  CODE_SIGNING_ALLOWED=NO \
+  -skipPackagePluginValidation -skipMacroValidation
 ```
 
 ## OpenAPI client generation
 
 The `Core/API/` directory is populated at build time by swift-openapi-generator
-reading from a pinned version of the [fred1210-api-spec](https://github.com/benreceveur/fred1210-api-spec) repo.
+reading from a pinned version of the `fred1210-api-spec` repo.
 Bumping the spec version is deliberate — edit the SPM dependency, regenerate,
 update `FredClient` to match any breaking changes.
 
 ## Release
 
-Future work (task #20): Fastlane with match/gym/pilot. Reuses ASC app `6762132909`, Apple ID `receveur123@gmail.com`, team `HSG4U9S69K`. Version `2.0.0` build `1` is the cutover from the RN app's build `7`.
+See `fastlane/SETUP.md` for TestFlight upload instructions. The `beta` lane runs `xcodegen generate → archive → export IPA → upload_to_testflight`. Build number is managed manually in `project.yml` via `CURRENT_PROJECT_VERSION` — bump it between releases, or override it per-developer in `Config/Local.xcconfig`.

@@ -1,4 +1,8 @@
-app_identifier("com.relayforgelabs.fred1210")
-apple_id("receveur123@gmail.com")
-team_id("HSG4U9S69K")
-itc_team_id("HSG4U9S69K")
+# Fastlane per-app credentials.
+# Real values live in `fastlane/.env.local` (gitignored) or environment vars.
+# See `fastlane/.env.local.example` for the template.
+
+app_identifier(ENV["FASTLANE_APP_IDENTIFIER"] || "com.example.fred1210")
+apple_id(ENV["FASTLANE_APPLE_ID"] || "owner@example.com")
+team_id(ENV["FASTLANE_TEAM_ID"] || "TEAM_ID_HERE")
+itc_team_id(ENV["FASTLANE_TEAM_ID"] || "TEAM_ID_HERE")

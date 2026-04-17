@@ -23,4 +23,44 @@ fastlane/report.xml
 fastlane/Preview.html
 fastlane/screenshots
 fastlane/test_output
-build/
+
+# ─── Personal setup & secrets (must never be committed) ─────────────────────
+# Credentials of any kind
+*.p8
+*.p12
+*.pem
+*.key
+*.cer
+*.crt
+*.keystore
+*.jks
+*.mobileprovision
+*.provisionprofile
+AuthKey_*.txt
+AuthKey_*.p8
+service-account*.json
+*-credentials.json
+*-creds.json
+google-services.json
+GoogleService-Info.plist
+
+# Per-developer Xcode config (holds Apple Team ID, Fred host URL, etc.)
+# See Config/Local.xcconfig.example for the template.
+Config/Local.xcconfig
+
+# Per-user / per-machine local config
+.env
+.env.*
+!.env.example
+.env.local
+*.local.json
+.personal/
+.personal.*
+secrets/
+local-config/
+
+# Fastlane session / auth cache
+fastlane/Appfile.local
+fastlane/.env
+fastlane/.env.*
+!fastlane/.env.example

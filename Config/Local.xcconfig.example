@@ -1,0 +1,24 @@
+// Per-developer Xcode configuration.
+//
+// Copy this file to `Config/Local.xcconfig` and fill in your own values.
+// `Local.xcconfig` is gitignored. Commit changes to `Local.xcconfig.example`
+// if you add a new variable; do NOT commit `Local.xcconfig`.
+//
+// Values set here flow into the generated Info.plist via
+// INFOPLIST_KEY_* variables (see project.yml), and into code signing
+// via DEVELOPMENT_TEAM. The app reads FredDefaultHost at launch via
+// `Bundle.main.object(forInfoDictionaryKey: "FredDefaultHost")`.
+
+// Apple Developer team (10-char alphanumeric, from ASC or Xcode)
+DEVELOPMENT_TEAM = TEAM_ID_HERE
+
+// Default Fred server URL the app connects to on first launch.
+// Must be a fully-qualified URL. User can override at runtime via the
+// in-app settings screen (stored in Keychain).
+FRED_DEFAULT_HOST = https://fred.example.ts.net
+
+// App bundle identifier. Must match the ASC app record for TestFlight.
+PRODUCT_BUNDLE_IDENTIFIER = com.example.fred1210
+
+// Exposed in the generated Info.plist as CFBundleURLName etc. if needed
+INFOPLIST_KEY_FredDefaultHost = $(FRED_DEFAULT_HOST)

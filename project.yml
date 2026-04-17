@@ -1,15 +1,26 @@
 name: Fred1210
 options:
-  bundleIdPrefix: com.relayforgelabs
+  # bundleIdPrefix is used by xcodegen only for auto-generating IDs when a
+  # target's PRODUCT_BUNDLE_IDENTIFIER isn't set. The real bundle ID comes
+  # from Config/Local.xcconfig per developer.
+  bundleIdPrefix: com.example
   deploymentTarget:
     iOS: "16.0"
   createIntermediateGroups: true
   groupSortPosition: top
   generateEmptyDirectories: true
+configs:
+  Debug: debug
+  Release: release
+configFiles:
+  # Per-developer values (DEVELOPMENT_TEAM, FRED_DEFAULT_HOST, etc.)
+  # are loaded from Config/Local.xcconfig which is gitignored.
+  # See Config/Local.xcconfig.example for the template.
+  Debug: Config/Local.xcconfig
+  Release: Config/Local.xcconfig
 settings:
   base:
     SWIFT_VERSION: "5.10"
-    DEVELOPMENT_TEAM: "HSG4U9S69K"
     MARKETING_VERSION: "2.0.0"
     CURRENT_PROJECT_VERSION: "1"
     ENABLE_USER_SCRIPT_SANDBOXING: NO
@@ -39,7 +50,7 @@ targets:
           - "**/.DS_Store"
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.relayforgelabs.fred1210
+        # PRODUCT_BUNDLE_IDENTIFIER comes from Config/Local.xcconfig
         INFOPLIST_KEY_CFBundleDisplayName: Fred1210
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
@@ -62,9 +73,12 @@ targets:
     sources: Fred1210Tests
     dependencies:
       - target: Fred1210
+    # Tests don't need a signed bundle ID that matches a real ASC record;
+    # a stable local-only id is fine. We do NOT inherit Config/Local.xcconfig
+    # here because that would clobber this id with the app's.
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.relayforgelabs.fred1210.tests
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.fred1210.tests
 schemes:
   Fred1210:
     build:
