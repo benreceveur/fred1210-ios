@@ -14,11 +14,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Select Xcode 16
-        run: sudo xcode-select -s /Applications/Xcode_16.app
+      # Pick the newest installed Xcode 16 that ships an iOS 18 simulator
+      # runtime. /Applications/Xcode_16.app (no patch suffix) does not
+      # bundle an iOS 18 runtime on macos-15 runners, so `iPhone 16`
+      # destinations fail to resolve.
+      - name: Select latest installed Xcode 16.x
+        run: |
+          XCODE=$(ls -d /Applications/Xcode_16.*.app 2>/dev/null | sort -V | tail -1)
+          if [ -z "$XCODE" ]; then
+            XCODE=/Applications/Xcode.app
+          fi
+          echo "Selecting $XCODE"
+          sudo xcode-select -s "$XCODE"
+          xcodebuild -version
 
       - name: Install xcodegen
         run: brew install xcodegen
+
+      # Config/Local.xcconfig is gitignored because it holds per-developer
+      # values. CI bootstraps it from the committed example so xcodegen's
+      # spec validation passes; test/build runs with CODE_SIGNING_ALLOWED=NO
+      # so placeholder DEVELOPMENT_TEAM / bundle ID don't matter.
+      - name: Bootstrap Config/Local.xcconfig
+        run: cp Config/Local.xcconfig.example Config/Local.xcconfig
 
       - name: Generate Xcode project
         run: xcodegen generate
@@ -42,16 +60,46 @@ jobs:
       APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
       APP_STORE_CONNECT_API_KEY_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ISSUER_ID }}
       APP_STORE_CONNECT_API_KEY_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY_KEY }}
+      FASTLANE_TEAM_ID: ${{ secrets.FASTLANE_TEAM_ID }}
+      FASTLANE_APP_IDENTIFIER: ${{ secrets.FASTLANE_APP_IDENTIFIER }}
+      FRED_DEFAULT_HOST: ${{ secrets.FRED_DEFAULT_HOST }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Select Xcode 16
-        run: sudo xcode-select -s /Applications/Xcode_16.app
+      # Pick the newest installed Xcode 16 that ships an iOS 18 simulator
+      # runtime. /Applications/Xcode_16.app (no patch suffix) does not
+      # bundle an iOS 18 runtime on macos-15 runners, so `iPhone 16`
+      # destinations fail to resolve.
+      - name: Select latest installed Xcode 16.x
+        run: |
+          XCODE=$(ls -d /Applications/Xcode_16.*.app 2>/dev/null | sort -V | tail -1)
+          if [ -z "$XCODE" ]; then
+            XCODE=/Applications/Xcode.app
+          fi
+          echo "Selecting $XCODE"
+          sudo xcode-select -s "$XCODE"
+          xcodebuild -version
 
       - name: Install xcodegen + fastlane
         run: |
           brew install xcodegen
           brew install fastlane
+
+      # Materialize Config/Local.xcconfig from secrets for the signed beta
+      # upload path. Falls back to the committed example when a secret is
+      # absent so the file is always valid for xcodegen.
+      - name: Bootstrap Config/Local.xcconfig
+        run: |
+          cp Config/Local.xcconfig.example Config/Local.xcconfig
+          if [ -n "$FASTLANE_TEAM_ID" ]; then
+            sed -i '' "s|^DEVELOPMENT_TEAM = .*|DEVELOPMENT_TEAM = $FASTLANE_TEAM_ID|" Config/Local.xcconfig
+          fi
+          if [ -n "$FASTLANE_APP_IDENTIFIER" ]; then
+            sed -i '' "s|^PRODUCT_BUNDLE_IDENTIFIER = .*|PRODUCT_BUNDLE_IDENTIFIER = $FASTLANE_APP_IDENTIFIER|" Config/Local.xcconfig
+          fi
+          if [ -n "$FRED_DEFAULT_HOST" ]; then
+            sed -i '' "s|^FRED_DEFAULT_HOST = .*|FRED_DEFAULT_HOST = $FRED_DEFAULT_HOST|" Config/Local.xcconfig
+          fi
 
       - name: Generate Xcode project
         run: xcodegen generate
