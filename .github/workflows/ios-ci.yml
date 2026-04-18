@@ -14,8 +14,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Select Xcode 16
-        run: sudo xcode-select -s /Applications/Xcode_16.app
+      # Pick the newest installed Xcode 16 that ships an iOS 18 simulator
+      # runtime. /Applications/Xcode_16.app (no patch suffix) does not
+      # bundle an iOS 18 runtime on macos-15 runners, so `iPhone 16`
+      # destinations fail to resolve.
+      - name: Select latest installed Xcode 16.x
+        run: |
+          XCODE=$(ls -d /Applications/Xcode_16.*.app 2>/dev/null | sort -V | tail -1)
+          if [ -z "$XCODE" ]; then
+            XCODE=/Applications/Xcode.app
+          fi
+          echo "Selecting $XCODE"
+          sudo xcode-select -s "$XCODE"
+          xcodebuild -version
 
       - name: Install xcodegen
         run: brew install xcodegen
@@ -55,8 +66,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Select Xcode 16
-        run: sudo xcode-select -s /Applications/Xcode_16.app
+      # Pick the newest installed Xcode 16 that ships an iOS 18 simulator
+      # runtime. /Applications/Xcode_16.app (no patch suffix) does not
+      # bundle an iOS 18 runtime on macos-15 runners, so `iPhone 16`
+      # destinations fail to resolve.
+      - name: Select latest installed Xcode 16.x
+        run: |
+          XCODE=$(ls -d /Applications/Xcode_16.*.app 2>/dev/null | sort -V | tail -1)
+          if [ -z "$XCODE" ]; then
+            XCODE=/Applications/Xcode.app
+          fi
+          echo "Selecting $XCODE"
+          sudo xcode-select -s "$XCODE"
+          xcodebuild -version
 
       - name: Install xcodegen + fastlane
         run: |
