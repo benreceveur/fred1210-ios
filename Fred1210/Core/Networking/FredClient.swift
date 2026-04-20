@@ -20,8 +20,14 @@ final class FredClient {
     init(config: FredConfig) {
         self.config = config
         let configuration = URLSessionConfiguration.default
-        configuration.timeoutIntervalForRequest = 15
-        configuration.timeoutIntervalForResource = 120
+        // Fred's /api/agent/chat routes through the full agent pipeline
+        // (LLM + tool loop + council fallback) which routinely takes
+        // 20–60s under normal load. A 15s request timeout was
+        // cancelling the request before the server finished,
+        // surfacing as "send error" in the Chat tab. 120s matches the
+        // existing resource timeout and covers p99 pipeline latency.
+        configuration.timeoutIntervalForRequest = 120
+        configuration.timeoutIntervalForResource = 180
         configuration.waitsForConnectivity = false
         self.session = URLSession(configuration: configuration)
     }

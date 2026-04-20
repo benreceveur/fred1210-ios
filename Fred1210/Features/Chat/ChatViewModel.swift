@@ -51,13 +51,26 @@ final class ChatViewModel: ObservableObject {
             messages.append(assistantMessage)
             displayError = nil
         } catch {
-            displayError = FredDisplayError.from(error, endpoint: "Send message", retry: nil)
-            // Remove the optimistic user message since the send failed — user
-            // can edit and retry.
-            if messages.last?.role == .user, messages.last?.content == text {
-                messages.removeLast()
+            displayError = FredDisplayError.from(
+                error, endpoint: "Send message",
+                retry: { [weak self] in
+                    // Re-fetch history in case the server actually
+                    // completed the send and we just lost the reply to
+                    // a timeout. Cheaper and safer than re-sending.
+                    await self?.loadHistory()
+                }
+            )
+            // Keep the optimistic user message visible so the user can
+            // see what they tried to send. The retry button pulls history
+            // in case the server did finish processing.
+            draft = ""
+            // Opportunistic history refresh: if the send timed out on
+            // the client but the server kept working, the assistant
+            // reply may land in history shortly after.
+            Task { [weak self] in
+                try? await Task.sleep(nanoseconds: 5_000_000_000)
+                await self?.loadHistory()
             }
-            draft = text
         }
     }
 
