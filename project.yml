@@ -58,6 +58,15 @@ targets:
         INFOPLIST_KEY_NSMicrophoneUsageDescription: "Fred needs microphone access for voice conversations"
         INFOPLIST_KEY_UIBackgroundModes: "remote-notification audio"
         TARGETED_DEVICE_FAMILY: "1"
+    # Keychain access group so future extensions (share extension,
+    # widget, Siri intent, watch app) can read the same host URL and
+    # credentials as the main app. The group is namespaced under the
+    # app's team identifier prefix (expanded at build time by Xcode).
+    entitlements:
+      path: Fred1210/Fred1210.entitlements
+      properties:
+        keychain-access-groups:
+          - $(AppIdentifierPrefix)com.relayforgelabs.fred1210.shared
     dependencies:
       - package: swift-openapi-runtime
         product: OpenAPIRuntime

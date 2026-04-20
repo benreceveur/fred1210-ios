@@ -77,20 +77,20 @@ private struct TaskListContentView: View {
                     }
                 }
             }
-            .task { await viewModel.refresh() }
+            .task {
+                await viewModel.loadFromCache()
+                await viewModel.refresh()
+            }
             .sheet(isPresented: $showingCreateSheet) {
                 CreateTaskSheet { title, description, priority in
                     Task { await viewModel.create(title: title, description: description, priority: priority) }
                 }
                 .presentationDetents([.medium])
             }
-            .alert("Error", isPresented: Binding(
-                get: { viewModel.errorMessage != nil },
-                set: { if !$0 { viewModel.clearError() } }
-            )) {
-                Button("OK") { viewModel.clearError() }
-            } message: {
-                Text(viewModel.errorMessage ?? "")
+            .safeAreaInset(edge: .top, spacing: 0) {
+                if let error = viewModel.displayError {
+                    ErrorBanner(error: error, onDismiss: viewModel.clearError)
+                }
             }
         }
     }

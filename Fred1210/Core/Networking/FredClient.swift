@@ -23,6 +23,10 @@ final class FredClient {
         configuration.timeoutIntervalForRequest = 15
         configuration.timeoutIntervalForResource = 120
         configuration.waitsForConnectivity = false
+        // Install the request-log protocol so Settings → Diagnostics can
+        // surface every request (method, URL, status, latency) for
+        // post-hoc troubleshooting without Xcode attached.
+        configuration.protocolClasses = [RequestLogProtocol.self] + (configuration.protocolClasses ?? [])
         self.session = URLSession(configuration: configuration)
     }
 

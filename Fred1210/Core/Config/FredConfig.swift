@@ -11,6 +11,13 @@ import KeychainAccess
 /// See Config/Local.xcconfig.example for the template.
 final class FredConfig: ObservableObject {
     static let service = "com.relayforgelabs.fred1210"
+    /// Shared access group so extensions (share, widget, Siri intent, watch)
+    /// read the same host URL as the main app. Must match the
+    /// `keychain-access-groups` entitlement declared in project.yml. Xcode
+    /// prefixes the group with the team ID at build time; KeychainAccess
+    /// handles the expansion when the group is passed with the literal
+    /// `$(AppIdentifierPrefix)` substring.
+    static let accessGroup = "$(AppIdentifierPrefix)com.relayforgelabs.fred1210.shared"
     private static let hostKey = "fred-host"
 
     /// Fallback when Config/Local.xcconfig hasn't been set up and the
@@ -29,7 +36,20 @@ final class FredConfig: ObservableObject {
     private let keychain: Keychain
 
     init() {
-        self.keychain = Keychain(service: Self.service).synchronizable(false)
+        // One-time migration: read any pre-Phase-1 value stored under the
+        // non-shared service keychain and copy it into the shared group.
+        // After migration, all reads/writes go through the shared group so
+        // future extensions see the same host the main app is using.
+        let shared = Keychain(service: Self.service, accessGroup: Self.accessGroup).synchronizable(false)
+        if (try? shared.get(Self.hostKey)) == nil {
+            let legacy = Keychain(service: Self.service).synchronizable(false)
+            let legacyValue = (try? legacy.get(Self.hostKey)) ?? nil
+            if let legacyValue, !legacyValue.isEmpty {
+                try? shared.set(legacyValue, key: Self.hostKey)
+            }
+        }
+        self.keychain = shared
+
         let stored = try? self.keychain.get(Self.hostKey)
         let raw = stored?.isEmpty == false ? stored! : Self.defaultHost
         self.hostURL = URL(string: raw) ?? URL(string: Self.defaultHost)!

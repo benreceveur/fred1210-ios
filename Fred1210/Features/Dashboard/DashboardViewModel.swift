@@ -54,7 +54,7 @@ struct DashboardSnapshot {
 final class DashboardViewModel: ObservableObject {
     @Published private(set) var snapshot = DashboardSnapshot.empty
     @Published private(set) var isLoading = false
-    @Published var errorMessage: String?
+    @Published var displayError: FredDisplayError?
 
     private let client: FredClient
 
@@ -72,13 +72,16 @@ final class DashboardViewModel: ObservableObject {
             async let transportTask = client.fetchTransportHealth()
             let (dashboard, status, transports) = try await (dashboardTask, statusTask, transportTask)
             snapshot = normalize(dashboard: dashboard, status: status, transports: transports)
-            errorMessage = nil
+            displayError = nil
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            displayError = FredDisplayError.from(
+                error, endpoint: "Dashboard",
+                retry: { [weak self] in await self?.refresh() }
+            )
         }
     }
 
-    func clearError() { errorMessage = nil }
+    func clearError() { displayError = nil }
 
     // MARK: - Normalization
 
