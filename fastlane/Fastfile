@@ -68,6 +68,21 @@ platform :ios do
   lane :beta do
     api_key = app_store_connect_api_key_from_env_or_nil
 
+    # Pass the ASC API key to xcodebuild so -allowProvisioningUpdates can
+    # fetch/create provisioning profiles without an Apple ID account signed
+    # into Xcode. Without this, archive fails on CI runners with:
+    #   "No Accounts: Add a new account in Accounts settings"
+    auth_xcargs = ""
+    if api_key
+      require "tempfile"
+      p8 = Tempfile.new(["AuthKey_#{ENV['APP_STORE_CONNECT_API_KEY_ID']}", ".p8"])
+      p8.write(ENV["APP_STORE_CONNECT_API_KEY_KEY"])
+      p8.close
+      auth_xcargs = " -authenticationKeyID #{ENV['APP_STORE_CONNECT_API_KEY_ID'].shellescape}" \
+                    " -authenticationKeyIssuerID #{ENV['APP_STORE_CONNECT_API_KEY_ISSUER_ID'].shellescape}" \
+                    " -authenticationKeyPath #{p8.path.shellescape}"
+    end
+
     build_app(
       project: PROJECT,
       scheme: SCHEME,
@@ -75,7 +90,7 @@ platform :ios do
       output_directory: "build",
       output_name: "Fred1210.ipa",
       export_method: "app-store",
-      xcargs: "-skipPackagePluginValidation -skipMacroValidation -allowProvisioningUpdates",
+      xcargs: "-skipPackagePluginValidation -skipMacroValidation -allowProvisioningUpdates" + auth_xcargs,
       clean: true
     )
 
