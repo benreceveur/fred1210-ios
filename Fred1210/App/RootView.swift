@@ -17,6 +17,9 @@ struct RootView: View {
 
             VoiceView()
                 .tabItem { Label("Voice", systemImage: "mic") }
+
+            SettingsView()
+                .tabItem { Label("Settings", systemImage: "gear") }
         }
         .tint(Theme.primary)
         .safeAreaInset(edge: .top, spacing: 0) {

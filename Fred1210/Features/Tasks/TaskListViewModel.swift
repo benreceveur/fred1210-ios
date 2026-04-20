@@ -4,12 +4,27 @@ import Foundation
 final class TaskListViewModel: ObservableObject {
     @Published private(set) var tasks: [Components.Schemas.Task] = []
     @Published private(set) var isLoading = false
-    @Published var errorMessage: String?
+    @Published private(set) var cacheAge: Date?
+    @Published var displayError: FredDisplayError?
 
     private let client: FredClient
+    private let cache: ResponseCache
 
-    init(client: FredClient) {
+    init(client: FredClient, cache: ResponseCache = .shared) {
         self.client = client
+        self.cache = cache
+    }
+
+    /// Populate from disk cache. Safe to call from `.task` — yields
+    /// immediately if nothing is cached and the normal refresh path
+    /// will fill in fresh data.
+    func loadFromCache() async {
+        if let entry = await cache.read(.tasks, as: [Components.Schemas.Task].self) {
+            tasks = entry.value.sorted { lhs, rhs in
+                priorityRank(lhs.priority) < priorityRank(rhs.priority)
+            }
+            cacheAge = entry.cachedAt
+        }
     }
 
     func refresh() async {
@@ -17,12 +32,18 @@ final class TaskListViewModel: ObservableObject {
         defer { isLoading = false }
         do {
             let items = try await client.listTasks()
-            tasks = items.sorted { lhs, rhs in
+            let sorted = items.sorted { lhs, rhs in
                 priorityRank(lhs.priority) < priorityRank(rhs.priority)
             }
-            errorMessage = nil
+            tasks = sorted
+            displayError = nil
+            cacheAge = Date()
+            await cache.write(.tasks, sorted)
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            displayError = FredDisplayError.from(
+                error, endpoint: "Tasks",
+                retry: { [weak self] in await self?.refresh() }
+            )
         }
     }
 
@@ -40,9 +61,9 @@ final class TaskListViewModel: ObservableObject {
         do {
             let task = try await client.createTask(request)
             tasks.insert(task, at: 0)
-            errorMessage = nil
+            displayError = nil
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            displayError = FredDisplayError.from(error, endpoint: "Create task", retry: nil)
         }
     }
 
@@ -65,12 +86,12 @@ final class TaskListViewModel: ObservableObject {
         do {
             try await client.deleteTask(id: task.id)
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            displayError = FredDisplayError.from(error, endpoint: "Delete task", retry: nil)
             if let index { tasks.insert(task, at: index) }
         }
     }
 
-    func clearError() { errorMessage = nil }
+    func clearError() { displayError = nil }
 
     // MARK: -
 
@@ -81,16 +102,17 @@ final class TaskListViewModel: ObservableObject {
                 tasks[index] = updated
             }
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            displayError = FredDisplayError.from(error, endpoint: "Update task", retry: nil)
         }
     }
 
     private func priorityRank(_ priority: Components.Schemas.Task.PriorityPayload) -> Int {
         switch priority {
-        case .critical: return 0
+        case .urgent: return 0
         case .high: return 1
         case .medium: return 2
         case .low: return 3
+        case .none: return 4
         }
     }
 }

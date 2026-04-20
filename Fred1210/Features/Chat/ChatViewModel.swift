@@ -5,7 +5,7 @@ final class ChatViewModel: ObservableObject {
     @Published private(set) var messages: [Components.Schemas.ChatMessage] = []
     @Published private(set) var isLoadingHistory = false
     @Published private(set) var isSending = false
-    @Published var errorMessage: String?
+    @Published var displayError: FredDisplayError?
     @Published var draft: String = ""
 
     private let client: FredClient
@@ -20,8 +20,12 @@ final class ChatViewModel: ObservableObject {
         do {
             let response = try await client.fetchHistory()
             messages = response.messages
+            displayError = nil
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            displayError = FredDisplayError.from(
+                error, endpoint: "Chat history",
+                retry: { [weak self] in await self?.loadHistory() }
+            )
         }
     }
 
@@ -45,8 +49,9 @@ final class ChatViewModel: ObservableObject {
                 content: response.response
             )
             messages.append(assistantMessage)
+            displayError = nil
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            displayError = FredDisplayError.from(error, endpoint: "Send message", retry: nil)
             // Remove the optimistic user message since the send failed — user
             // can edit and retry.
             if messages.last?.role == .user, messages.last?.content == text {
@@ -57,6 +62,6 @@ final class ChatViewModel: ObservableObject {
     }
 
     func clearError() {
-        errorMessage = nil
+        displayError = nil
     }
 }

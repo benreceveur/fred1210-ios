@@ -30,13 +30,10 @@ private struct ChatContentView: View {
             .toolbarBackground(Theme.bgCard, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .task { await viewModel.loadHistory() }
-            .alert("Error", isPresented: Binding(
-                get: { viewModel.errorMessage != nil },
-                set: { if !$0 { viewModel.clearError() } }
-            )) {
-                Button("OK") { viewModel.clearError() }
-            } message: {
-                Text(viewModel.errorMessage ?? "")
+            .safeAreaInset(edge: .top, spacing: 0) {
+                if let error = viewModel.displayError {
+                    ErrorBanner(error: error, onDismiss: viewModel.clearError)
+                }
             }
         }
     }
@@ -73,6 +70,7 @@ private struct ChatContentView: View {
                     proxy.scrollTo(count - 1, anchor: .bottom)
                 }
             }
+            .refreshable { await viewModel.loadHistory() }
         }
     }
 

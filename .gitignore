@@ -10,6 +10,8 @@ build/
 
 # xcodegen generated — regenerate via `xcodegen generate`
 Fred1210.xcodeproj
+Fred1210/Fred1210.entitlements
+Fred1210/Info.plist
 
 # macOS
 .DS_Store

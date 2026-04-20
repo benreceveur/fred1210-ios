@@ -26,11 +26,48 @@ final class FredClient {
         self.session = URLSession(configuration: configuration)
     }
 
+    /// Wraps an API call with timing + RequestLog emission. We log via
+    /// this helper instead of a URLProtocol because URLProtocol
+    /// interception interferes with swift-openapi-runtime's
+    /// URLSessionTransport response handling.
+    private func logged<T>(
+        _ method: String,
+        _ endpoint: String,
+        _ block: () async throws -> T
+    ) async throws -> T {
+        let started = Date()
+        let fullURL = config.hostURL.appendingPathComponent(endpoint).absoluteString
+        do {
+            let result = try await block()
+            await RequestLog.shared.record(.init(
+                method: method, url: fullURL, status: 200,
+                latencyMs: Int(Date().timeIntervalSince(started) * 1000),
+                error: nil, timestamp: started
+            ))
+            return result
+        } catch {
+            let status: Int? = (error as? FredError).flatMap { err in
+                if case let .server(code, _) = err { return code }
+                if case .unauthorized = err { return 401 }
+                if case .notFound = err { return 404 }
+                return nil
+            }
+            await RequestLog.shared.record(.init(
+                method: method, url: fullURL, status: status,
+                latencyMs: Int(Date().timeIntervalSince(started) * 1000),
+                error: (error as? LocalizedError)?.errorDescription ?? error.localizedDescription,
+                timestamp: started
+            ))
+            throw error
+        }
+    }
+
     // MARK: - Generated Client
 
     private func makeClient() -> Client {
         Client(
             serverURL: config.hostURL,
+            configuration: Configuration(dateTranscoder: TolerantISO8601Transcoder()),
             transport: URLSessionTransport(configuration: .init(session: session))
         )
     }
@@ -38,65 +75,87 @@ final class FredClient {
     // MARK: - Typed wrappers
 
     func fetchAgentStatus() async throws -> Components.Schemas.AgentStatus {
-        let output = try await makeClient().getAgentStatus(.init())
-        return try output.ok.body.json
+        try await logged("GET", "/api/agent/status") {
+            let output = try await makeClient().getAgentStatus(.init())
+            return try output.ok.body.json
+        }
     }
 
     func sendChatMessage(_ text: String) async throws -> Components.Schemas.ChatResponse {
-        let output = try await makeClient().postChat(
-            .init(body: .json(.init(message: text)))
-        )
-        return try output.ok.body.json
+        try await logged("POST", "/api/agent/chat") {
+            let output = try await makeClient().postChat(
+                .init(body: .json(.init(message: text)))
+            )
+            return try output.ok.body.json
+        }
     }
 
     func fetchHistory() async throws -> Components.Schemas.HistoryResponse {
-        let output = try await makeClient().getChatHistory(.init())
-        return try output.ok.body.json
+        try await logged("GET", "/api/agent/history") {
+            let output = try await makeClient().getChatHistory(.init())
+            return try output.ok.body.json
+        }
     }
 
     func fetchDashboard() async throws -> Components.Schemas.DashboardResponse {
-        let output = try await makeClient().getDashboard(.init())
-        return try output.ok.body.json
+        try await logged("GET", "/api/agent/dashboard") {
+            let output = try await makeClient().getDashboard(.init())
+            return try output.ok.body.json
+        }
     }
 
     func fetchTransportHealth() async throws -> [Components.Schemas.TransportHealth] {
-        let output = try await makeClient().getTransportHealth(.init())
-        return try output.ok.body.json.transports
+        try await logged("GET", "/api/agent/transport/health") {
+            let output = try await makeClient().getTransportHealth(.init())
+            return try output.ok.body.json.transports
+        }
     }
 
     func listTasks() async throws -> [Components.Schemas.Task] {
-        let output = try await makeClient().listTasks(.init())
-        return try output.ok.body.json.tasks
+        try await logged("GET", "/api/agent/tasks") {
+            let output = try await makeClient().listTasks(.init())
+            return try output.ok.body.json.tasks
+        }
     }
 
     func getTask(id: String) async throws -> Components.Schemas.Task {
-        let output = try await makeClient().getTask(.init(path: .init(id: id)))
-        return try output.ok.body.json
+        try await logged("GET", "/api/agent/tasks/\(id)") {
+            let output = try await makeClient().getTask(.init(path: .init(id: id)))
+            return try output.ok.body.json
+        }
     }
 
     func createTask(_ request: Components.Schemas.CreateTaskRequest) async throws -> Components.Schemas.Task {
-        let output = try await makeClient().createTask(.init(body: .json(request)))
-        return try output.created.body.json.task
+        try await logged("POST", "/api/agent/tasks") {
+            let output = try await makeClient().createTask(.init(body: .json(request)))
+            return try output.created.body.json.task
+        }
     }
 
     func updateTask(
         id: String,
         patch: Components.Schemas.UpdateTaskRequest
     ) async throws -> Components.Schemas.Task {
-        let output = try await makeClient().updateTask(
-            .init(path: .init(id: id), body: .json(patch))
-        )
-        return try output.ok.body.json.task
+        try await logged("PATCH", "/api/agent/tasks/\(id)") {
+            let output = try await makeClient().updateTask(
+                .init(path: .init(id: id), body: .json(patch))
+            )
+            return try output.ok.body.json.task
+        }
     }
 
     func deleteTask(id: String) async throws {
-        let output = try await makeClient().deleteTask(.init(path: .init(id: id)))
-        _ = try output.ok  // throws if not 2xx
+        try await logged("DELETE", "/api/agent/tasks/\(id)") {
+            let output = try await makeClient().deleteTask(.init(path: .init(id: id)))
+            _ = try output.ok  // throws if not 2xx
+        }
     }
 
     func fetchVoiceHealth() async throws -> Components.Schemas.VoiceHealthResponse {
-        let output = try await makeClient().voiceHealth(.init())
-        return try output.ok.body.json
+        try await logged("GET", "/voice/health") {
+            let output = try await makeClient().voiceHealth(.init())
+            return try output.ok.body.json
+        }
     }
 
     // MARK: - Direct multipart: voice turn

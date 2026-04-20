@@ -14,7 +14,7 @@ final class VoiceViewModel: NSObject, ObservableObject {
     @Published var transcript: String = ""
     @Published var responseText: String = ""
     @Published var latency: LatencyBreakdown?
-    @Published var errorMessage: String?
+    @Published var displayError: FredDisplayError?
 
     struct LatencyBreakdown: Equatable {
         let sttMs: Int
@@ -33,11 +33,17 @@ final class VoiceViewModel: NSObject, ObservableObject {
 
     func startHoldToTalk() async {
         guard state == .idle else { return }
-        errorMessage = nil
+        displayError = nil
 
         let granted = await recorder.requestPermission()
         guard granted else {
-            errorMessage = "Microphone permission denied"
+            displayError = FredDisplayError(
+                endpoint: "Voice",
+                primaryMessage: "Microphone permission denied",
+                detailMessage: "Enable microphone access for Fred1210 in Settings → Privacy & Security → Microphone.",
+                httpStatus: nil,
+                retry: nil
+            )
             return
         }
 
@@ -45,7 +51,7 @@ final class VoiceViewModel: NSObject, ObservableObject {
             try recorder.startRecording()
             state = .recording
         } catch {
-            errorMessage = "Failed to start recording: \(error.localizedDescription)"
+            displayError = FredDisplayError.from(error, endpoint: "Start recording", retry: nil)
             state = .idle
         }
     }
@@ -68,6 +74,7 @@ final class VoiceViewModel: NSObject, ObservableObject {
                 ttsMs: result.ttsMs,
                 totalMs: result.totalMs
             )
+            displayError = nil
 
             // Delete the recorded file now that the server has transcribed it.
             try? FileManager.default.removeItem(at: audioURL)
@@ -75,13 +82,13 @@ final class VoiceViewModel: NSObject, ObservableObject {
             // Play the synthesized response audio.
             await playResponse(result.audioData, mimeType: result.mimeType)
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            displayError = FredDisplayError.from(error, endpoint: "Voice turn", retry: nil)
             state = .idle
             try? FileManager.default.removeItem(at: audioURL)
         }
     }
 
-    func clearError() { errorMessage = nil }
+    func clearError() { displayError = nil }
 
     private func playResponse(_ data: Data, mimeType: String) async {
         do {
@@ -92,7 +99,13 @@ final class VoiceViewModel: NSObject, ObservableObject {
             self.player = player
             state = .playing
         } catch {
-            errorMessage = "Playback failed: \(error.localizedDescription)"
+            displayError = FredDisplayError(
+                endpoint: "Voice playback",
+                primaryMessage: "Playback failed",
+                detailMessage: error.localizedDescription,
+                httpStatus: nil,
+                retry: nil
+            )
             state = .idle
         }
     }

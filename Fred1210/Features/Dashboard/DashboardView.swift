@@ -44,13 +44,10 @@ private struct DashboardContentView: View {
                 startAutoRefresh()
             }
             .onDisappear { refreshTask?.cancel() }
-            .alert("Error", isPresented: Binding(
-                get: { viewModel.errorMessage != nil },
-                set: { if !$0 { viewModel.clearError() } }
-            )) {
-                Button("OK") { viewModel.clearError() }
-            } message: {
-                Text(viewModel.errorMessage ?? "")
+            .safeAreaInset(edge: .top, spacing: 0) {
+                if let error = viewModel.displayError {
+                    ErrorBanner(error: error, onDismiss: viewModel.clearError)
+                }
             }
         }
     }

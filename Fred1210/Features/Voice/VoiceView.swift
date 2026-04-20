@@ -28,13 +28,10 @@ private struct VoiceContentView: View {
             .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbarBackground(Theme.bgCard, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
-            .alert("Error", isPresented: Binding(
-                get: { viewModel.errorMessage != nil },
-                set: { if !$0 { viewModel.clearError() } }
-            )) {
-                Button("OK") { viewModel.clearError() }
-            } message: {
-                Text(viewModel.errorMessage ?? "")
+            .safeAreaInset(edge: .top, spacing: 0) {
+                if let error = viewModel.displayError {
+                    ErrorBanner(error: error, onDismiss: viewModel.clearError)
+                }
             }
         }
     }
