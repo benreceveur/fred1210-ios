@@ -2,9 +2,26 @@ import Foundation
 
 @MainActor
 final class ChatViewModel: ObservableObject {
+    /// Tool-call progress chip for the in-flight turn. Rendered between the
+    /// optimistic user message and the assistant reply so users see what
+    /// Fred is doing instead of staring at a spinner.
+    struct ToolActivity: Identifiable, Equatable {
+        let id: UUID = UUID()
+        let name: String
+        var argsPreview: String
+        var state: State
+
+        enum State: Equatable {
+            case running
+            case completed(latencyMs: Int)
+            case failed(latencyMs: Int, errorPreview: String?)
+        }
+    }
+
     @Published private(set) var messages: [Components.Schemas.ChatMessage] = []
     @Published private(set) var isLoadingHistory = false
     @Published private(set) var isSending = false
+    @Published private(set) var activeTools: [ToolActivity] = []
     @Published var displayError: FredDisplayError?
     @Published var draft: String = ""
     @Published var searchQuery: String = ""
@@ -44,7 +61,11 @@ final class ChatViewModel: ObservableObject {
 
         draft = ""
         isSending = true
-        defer { isSending = false }
+        activeTools = []
+        defer {
+            isSending = false
+            activeTools = []
+        }
 
         // Optimistic: append the user message immediately so the UI
         // reflects intent without waiting for the server round trip.
@@ -52,12 +73,35 @@ final class ChatViewModel: ObservableObject {
         messages.append(userMessage)
 
         do {
-            let response = try await client.sendChatMessage(text)
-            let assistantMessage = Components.Schemas.ChatMessage(
+            var finalContent: String?
+            for try await event in client.sendChatMessageStreaming(text) {
+                switch event {
+                case .toolCall(let name, let argsPreview):
+                    activeTools.append(ToolActivity(
+                        name: name, argsPreview: argsPreview, state: .running
+                    ))
+                case .toolResult(let name, let ok, let latencyMs, let errorPreview):
+                    // Mark the most-recent running invocation of this tool as
+                    // done. We walk backwards because the pipeline can queue
+                    // the same tool twice in one turn.
+                    if let idx = activeTools.lastIndex(where: {
+                        $0.name == name && $0.state == .running
+                    }) {
+                        activeTools[idx].state = ok
+                            ? .completed(latencyMs: latencyMs)
+                            : .failed(latencyMs: latencyMs, errorPreview: errorPreview)
+                    }
+                case .done(let content, _, _):
+                    finalContent = content
+                case .error(let message):
+                    throw FredError.server(status: 500, message: message)
+                }
+            }
+            let assistant = Components.Schemas.ChatMessage(
                 role: .assistant,
-                content: response.response
+                content: finalContent ?? ""
             )
-            messages.append(assistantMessage)
+            messages.append(assistant)
             displayError = nil
         } catch {
             displayError = FredDisplayError.from(

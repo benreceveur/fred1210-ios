@@ -96,6 +96,107 @@ final class FredClient {
         }
     }
 
+    /// Lifecycle events emitted by the `/api/agent/chat/stream` SSE endpoint.
+    /// The server runs the full agent pipeline (LLM + tool loop) and streams
+    /// each tool invocation so the Chat UI can show progress mid-turn.
+    enum ChatStreamEvent {
+        case toolCall(name: String, argsPreview: String)
+        case toolResult(name: String, ok: Bool, latencyMs: Int, errorPreview: String?)
+        case done(content: String, provider: String?, iterations: Int)
+        case error(message: String)
+    }
+
+    /// Streams chat events as they happen. Consumers render them inline in the
+    /// conversation so a long tool-using turn doesn't look like a frozen
+    /// spinner. The stream terminates when the pipeline emits `done` or
+    /// `error`, or when the caller cancels the enclosing Task.
+    func sendChatMessageStreaming(_ text: String) -> AsyncThrowingStream<ChatStreamEvent, Error> {
+        let hostURL = config.hostURL
+        let session = self.session
+        return AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    let url = hostURL.appendingPathComponent("/api/agent/chat/stream")
+                    var request = URLRequest(url: url)
+                    request.httpMethod = "POST"
+                    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                    request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+                    request.httpBody = try JSONSerialization.data(
+                        withJSONObject: ["message": text], options: []
+                    )
+
+                    let (bytes, response) = try await session.bytes(for: request)
+                    guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+                        let code = (response as? HTTPURLResponse)?.statusCode ?? -1
+                        throw FredError.server(status: code, message: nil)
+                    }
+
+                    for try await line in bytes.lines {
+                        try Task.checkCancellation()
+                        // SSE frames we care about are `data: {...}`. Ignore
+                        // comment heartbeats (`: ping`) and blank separators.
+                        guard line.hasPrefix("data: ") else { continue }
+                        let jsonString = String(line.dropFirst("data: ".count))
+                        guard let jsonData = jsonString.data(using: .utf8) else { continue }
+                        if let event = Self.parseStreamEvent(from: jsonData) {
+                            continuation.yield(event)
+                            if case .done = event { break }
+                            if case .error = event { break }
+                        }
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+
+    private static func parseStreamEvent(from data: Data) -> ChatStreamEvent? {
+        guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let type = obj["type"] as? String else { return nil }
+        switch type {
+        case "tool_call":
+            let name = (obj["name"] as? String) ?? "tool"
+            let args = obj["args"] as? [String: Any] ?? [:]
+            return .toolCall(name: name, argsPreview: summarize(args))
+        case "tool_result":
+            let name = (obj["name"] as? String) ?? "tool"
+            let ok = (obj["ok"] as? Bool) ?? false
+            let latency = (obj["latencyMs"] as? Int) ?? 0
+            let errorPreview = obj["errorPreview"] as? String
+            return .toolResult(name: name, ok: ok, latencyMs: latency, errorPreview: errorPreview)
+        case "done":
+            let content = (obj["content"] as? String) ?? ""
+            let provider = obj["provider"] as? String
+            let iterations = (obj["iterations"] as? Int) ?? 0
+            return .done(content: content, provider: provider, iterations: iterations)
+        case "error":
+            let message = (obj["message"] as? String) ?? "Stream error"
+            return .error(message: message)
+        default:
+            return nil
+        }
+    }
+
+    /// Compact, human-readable one-liner of a tool's arguments for the Chat
+    /// chip — truncated so big payloads don't blow up the row height.
+    private static func summarize(_ args: [String: Any]) -> String {
+        let first = args.first
+        guard let (key, value) = first else { return "" }
+        let preview: String
+        if let str = value as? String { preview = str }
+        else if JSONSerialization.isValidJSONObject(value) {
+            preview = (try? JSONSerialization.data(withJSONObject: value, options: []))
+                .flatMap { String(data: $0, encoding: .utf8) } ?? "…"
+        } else {
+            preview = String(describing: value)
+        }
+        let trimmed = preview.prefix(60)
+        return args.count == 1 ? "\(key): \(trimmed)" : "\(key): \(trimmed) +\(args.count - 1)"
+    }
+
     func fetchHistory() async throws -> Components.Schemas.HistoryResponse {
         try await logged("GET", "/api/agent/history") {
             let output = try await makeClient().getChatHistory(.init())

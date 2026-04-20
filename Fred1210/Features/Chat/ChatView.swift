@@ -80,6 +80,13 @@ private struct ChatContentView: View {
                             )
                             .id(groupIdx)
                         }
+                        // In-flight tool chips: visible only while the
+                        // current turn is streaming. They vanish as soon as
+                        // the final assistant message lands.
+                        if !viewModel.activeTools.isEmpty {
+                            ToolActivityStack(activities: viewModel.activeTools)
+                                .id("tool-activity")
+                        }
                     }
                 }
                 .padding(Theme.Spacing.lg)
@@ -258,5 +265,74 @@ private struct HighlightedText: View {
 private extension AttributedString {
     func index(_ start: AttributedString.Index, offsetByCharacters n: Int) -> AttributedString.Index? {
         self.characters.index(start, offsetBy: n, limitedBy: self.characters.endIndex)
+    }
+}
+
+// MARK: - Tool activity chips
+
+/// Inline progress indicator showing each tool the agent invokes during
+/// the current turn. Each chip flips from spinner → checkmark/x as the
+/// pipeline emits tool_result SSE events.
+private struct ToolActivityStack: View {
+    let activities: [ChatViewModel.ToolActivity]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(activities) { activity in
+                HStack(spacing: Theme.Spacing.sm) {
+                    stateIcon(for: activity.state)
+                        .frame(width: 18, height: 18)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(activity.name)
+                            .font(.system(size: Theme.Font.sm, weight: .semibold))
+                            .foregroundStyle(Theme.textPrimary)
+                        if !activity.argsPreview.isEmpty {
+                            Text(activity.argsPreview)
+                                .font(.system(size: Theme.Font.xs))
+                                .foregroundStyle(Theme.textMuted)
+                                .lineLimit(1)
+                        }
+                        if case let .failed(_, errorPreview) = activity.state,
+                           let preview = errorPreview, !preview.isEmpty {
+                            Text(preview)
+                                .font(.system(size: Theme.Font.xs))
+                                .foregroundStyle(Theme.error)
+                                .lineLimit(2)
+                        }
+                    }
+                    Spacer()
+                    stateTrailing(for: activity.state)
+                }
+                .padding(Theme.Spacing.sm)
+                .background(Theme.bgCard)
+                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm, style: .continuous))
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func stateIcon(for state: ChatViewModel.ToolActivity.State) -> some View {
+        switch state {
+        case .running:
+            ProgressView().tint(Theme.primary).controlSize(.small)
+        case .completed:
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(Theme.success)
+        case .failed:
+            Image(systemName: "xmark.octagon.fill")
+                .foregroundStyle(Theme.error)
+        }
+    }
+
+    @ViewBuilder
+    private func stateTrailing(for state: ChatViewModel.ToolActivity.State) -> some View {
+        switch state {
+        case .running:
+            EmptyView()
+        case .completed(let ms), .failed(let ms, _):
+            Text("\(ms)ms")
+                .font(.system(size: Theme.Font.xs, weight: .semibold))
+                .foregroundStyle(Theme.textMuted)
+        }
     }
 }
