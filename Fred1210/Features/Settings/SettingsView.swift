@@ -5,6 +5,7 @@ import SwiftUI
 /// channels, feature flags) arrives in later phases.
 struct SettingsView: View {
     @EnvironmentObject var config: FredConfig
+    @EnvironmentObject var pushManager: PushManager
     @StateObject private var viewModel = SettingsViewModel()
     @FocusState private var hostFieldFocused: Bool
 
@@ -59,6 +60,34 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    HStack {
+                        Label("Notifications", systemImage: "bell")
+                        Spacer()
+                        Text(pushStatusLabel)
+                            .font(.system(size: Theme.Font.xs, weight: .semibold))
+                            .foregroundStyle(pushStatusColor)
+                    }
+                    if pushManager.authState == .notDetermined {
+                        Button("Enable push notifications") {
+                            Task { await pushManager.requestAuthorizationIfNeeded() }
+                        }
+                    } else if pushManager.authState == .denied {
+                        Text("Enable notifications for Fred1210 in System Settings → Notifications.")
+                            .font(.system(size: Theme.Font.xs))
+                            .foregroundStyle(Theme.textMuted)
+                    } else if let lastReg = pushManager.lastRegistration {
+                        Text("Token registered \(lastReg.relativeAge())")
+                            .font(.system(size: Theme.Font.xs))
+                            .foregroundStyle(Theme.textMuted)
+                    }
+                    if let err = pushManager.lastError {
+                        Text(err)
+                            .font(.system(size: Theme.Font.xs))
+                            .foregroundStyle(Theme.error)
+                    }
+                }
+
+                Section {
                     NavigationLink {
                         DiagnosticsView()
                     } label: {
@@ -73,7 +102,27 @@ struct SettingsView: View {
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
-            .onAppear { viewModel.syncFromConfig(config) }
+            .onAppear {
+                viewModel.syncFromConfig(config)
+                Task { await pushManager.refreshAuthStatus() }
+            }
+        }
+    }
+
+    private var pushStatusLabel: String {
+        switch pushManager.authState {
+        case .notDetermined: return "OFF"
+        case .authorized: return "ON"
+        case .provisional: return "QUIET"
+        case .denied: return "BLOCKED"
+        }
+    }
+
+    private var pushStatusColor: Color {
+        switch pushManager.authState {
+        case .authorized, .provisional: return Theme.success
+        case .denied: return Theme.error
+        case .notDetermined: return Theme.textMuted
         }
     }
 }

@@ -21,8 +21,8 @@ configFiles:
 settings:
   base:
     SWIFT_VERSION: "5.10"
-    MARKETING_VERSION: "2.1.0"
-    CURRENT_PROJECT_VERSION: "3"
+    MARKETING_VERSION: "2.2.0"
+    CURRENT_PROJECT_VERSION: "1"
     ENABLE_USER_SCRIPT_SANDBOXING: NO
     CODE_SIGN_STYLE: Automatic
     GENERATE_INFOPLIST_FILE: YES
@@ -68,6 +68,9 @@ targets:
         UIBackgroundModes:
           - remote-notification
           - audio
+          - fetch
+        BGTaskSchedulerPermittedIdentifiers:
+          - com.relayforgelabs.fred1210.refresh
         ITSAppUsesNonExemptEncryption: false
         FredDefaultHost: "$(FRED_DEFAULT_HOST)"
     settings:
@@ -84,15 +87,54 @@ targets:
       properties:
         keychain-access-groups:
           - $(AppIdentifierPrefix)com.relayforgelabs.fred1210.shared
+        # aps-environment is required for APNs registration. "development"
+        # here covers TestFlight; Apple auto-switches to "production" when
+        # the build is promoted to the App Store.
+        aps-environment: development
     dependencies:
       - package: swift-openapi-runtime
         product: OpenAPIRuntime
       - package: swift-openapi-urlsession
         product: OpenAPIURLSession
       - package: KeychainAccess
+      - target: Fred1210ShareExtension
+        embed: true
     buildToolPlugins:
       - plugin: OpenAPIGenerator
         package: swift-openapi-generator
+  Fred1210ShareExtension:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: ShareExtension
+    info:
+      path: ShareExtension/Info.plist
+      properties:
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        CFBundleDisplayName: Fred1210
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.share-services
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
+          NSExtensionAttributes:
+            NSExtensionActivationRule:
+              NSExtensionActivationSupportsWebURLWithMaxCount: 1
+              NSExtensionActivationSupportsText: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.relayforgelabs.fred1210.share
+        GENERATE_INFOPLIST_FILE: NO
+        # Match parent app's deployment target so Shared Keychain queries
+        # work identically.
+        IPHONEOS_DEPLOYMENT_TARGET: "16.0"
+    # Keychain access group shared with the main app — lets the share
+    # extension read the Fred host URL without re-prompting the user.
+    entitlements:
+      path: ShareExtension/Fred1210ShareExtension.entitlements
+      properties:
+        keychain-access-groups:
+          - $(AppIdentifierPrefix)com.relayforgelabs.fred1210.shared
+
   Fred1210Tests:
     type: bundle.unit-test
     platform: iOS
