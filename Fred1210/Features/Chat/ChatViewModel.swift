@@ -7,6 +7,15 @@ final class ChatViewModel: ObservableObject {
     @Published private(set) var isSending = false
     @Published var displayError: FredDisplayError?
     @Published var draft: String = ""
+    @Published var searchQuery: String = ""
+
+    /// Filtered view of ``messages`` based on the current search query.
+    /// Case-insensitive substring match on message content.
+    var visibleMessages: [Components.Schemas.ChatMessage] {
+        let query = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !query.isEmpty else { return messages }
+        return messages.filter { $0.content.lowercased().contains(query) }
+    }
 
     private let client: FredClient
 

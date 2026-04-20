@@ -29,6 +29,15 @@ private struct ChatContentView: View {
             .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbarBackground(Theme.bgCard, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
+            // Toolbar search field — collapses to the magnifier when
+            // empty, expands when tapped. Filters the loaded history
+            // on-device; server pagination will come when /history gains
+            // a since cursor.
+            .searchable(
+                text: $viewModel.searchQuery,
+                placement: .navigationBarDrawer(displayMode: .automatic),
+                prompt: "Search chat"
+            )
             .task { await viewModel.loadHistory() }
             .safeAreaInset(edge: .top, spacing: 0) {
                 if let error = viewModel.displayError {
@@ -55,9 +64,21 @@ private struct ChatContentView: View {
                             .frame(maxWidth: .infinity)
                             .padding(.top, Theme.Spacing.xxl)
                     } else {
-                        ForEach(Array(viewModel.messages.enumerated()), id: \.offset) { idx, message in
-                            ChatBubble(message: message)
-                                .id(idx)
+                        let groups = groupedByRole(viewModel.visibleMessages)
+                        if groups.isEmpty && !viewModel.searchQuery.isEmpty {
+                            Text("No messages match '\(viewModel.searchQuery)'.")
+                                .font(.system(size: Theme.Font.sm))
+                                .foregroundStyle(Theme.textMuted)
+                                .frame(maxWidth: .infinity)
+                                .padding(.top, Theme.Spacing.xxl)
+                        }
+                        ForEach(Array(groups.enumerated()), id: \.offset) { groupIdx, group in
+                            ChatGroupView(
+                                role: group.role,
+                                messages: group.messages,
+                                query: viewModel.searchQuery
+                            )
+                            .id(groupIdx)
                         }
                     }
                 }
@@ -71,8 +92,6 @@ private struct ChatContentView: View {
                 }
             }
             .refreshable { await viewModel.loadHistory() }
-            // Drag the message list down to dismiss the keyboard. Matches
-            // the gesture users expect from Messages / Mail.
             .scrollDismissesKeyboard(.interactively)
         }
     }
@@ -90,9 +109,6 @@ private struct ChatContentView: View {
                 .focused($inputFocused)
                 .submitLabel(.send)
                 .onSubmit { Task { await viewModel.send() } }
-                // Adds a "Done" button above the keyboard. Without this,
-                // the multiline TextField has no built-in way to dismiss
-                // — Return inserts a newline instead of submitting.
                 .toolbar {
                     ToolbarItemGroup(placement: .keyboard) {
                         Spacer()
@@ -126,34 +142,70 @@ private struct ChatContentView: View {
     private var isSendDisabled: Bool {
         viewModel.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || viewModel.isSending
     }
+
+    // MARK: -
+
+    private struct Group {
+        let role: Components.Schemas.ChatMessage.RolePayload
+        let messages: [Components.Schemas.ChatMessage]
+    }
+
+    /// Collapses runs of same-role messages into a single group so only
+    /// one "YOU" / "FRED" label shows per turn — reduces visual noise in
+    /// long tool-rich conversations.
+    private func groupedByRole(_ messages: [Components.Schemas.ChatMessage]) -> [Group] {
+        var groups: [Group] = []
+        var current: [Components.Schemas.ChatMessage] = []
+        var currentRole: Components.Schemas.ChatMessage.RolePayload?
+        for message in messages {
+            if message.role == currentRole {
+                current.append(message)
+            } else {
+                if let role = currentRole, !current.isEmpty {
+                    groups.append(Group(role: role, messages: current))
+                }
+                current = [message]
+                currentRole = message.role
+            }
+        }
+        if let role = currentRole, !current.isEmpty {
+            groups.append(Group(role: role, messages: current))
+        }
+        return groups
+    }
 }
 
-// MARK: - ChatBubble
+// MARK: - Role group view
 
-struct ChatBubble: View {
-    let message: Components.Schemas.ChatMessage
+private struct ChatGroupView: View {
+    let role: Components.Schemas.ChatMessage.RolePayload
+    let messages: [Components.Schemas.ChatMessage]
+    let query: String
 
     var body: some View {
-        HStack {
-            if message.role == .user { Spacer(minLength: 40) }
-            VStack(alignment: message.role == .user ? .trailing : .leading, spacing: 4) {
-                Text(roleLabel)
+        HStack(alignment: .top) {
+            if role == .user { Spacer(minLength: 40) }
+            VStack(alignment: role == .user ? .trailing : .leading, spacing: 4) {
+                Text(label)
                     .font(.system(size: Theme.Font.xs, weight: .semibold))
                     .foregroundStyle(Theme.textMuted)
-                Text(message.content)
-                    .font(.system(size: Theme.Font.md))
-                    .foregroundStyle(Theme.textPrimary)
-                    .padding(Theme.Spacing.md)
-                    .background(bubbleColor)
-                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md, style: .continuous))
-                    .textSelection(.enabled)
+                ForEach(Array(messages.enumerated()), id: \.offset) { _, message in
+                    HighlightedText(message.content, query: query)
+                        .font(.system(size: Theme.Font.md))
+                        .foregroundStyle(Theme.textPrimary)
+                        .padding(Theme.Spacing.md)
+                        .background(bubbleColor)
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md, style: .continuous))
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: role == .user ? .trailing : .leading)
+                }
             }
-            if message.role != .user { Spacer(minLength: 40) }
+            if role != .user { Spacer(minLength: 40) }
         }
     }
 
-    private var roleLabel: String {
-        switch message.role {
+    private var label: String {
+        switch role {
         case .user: return "YOU"
         case .assistant: return "FRED"
         case .system: return "SYSTEM"
@@ -161,10 +213,50 @@ struct ChatBubble: View {
     }
 
     private var bubbleColor: Color {
-        switch message.role {
+        switch role {
         case .user: return Theme.primary.opacity(0.25)
         case .assistant: return Theme.bgCard
         case .system: return Theme.warning.opacity(0.15)
         }
+    }
+}
+
+/// Renders the message text, highlighting any substring that matches the
+/// current search query. Falls back to plain text when query is empty.
+private struct HighlightedText: View {
+    let text: String
+    let query: String
+
+    init(_ text: String, query: String) {
+        self.text = text
+        self.query = query.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var body: some View {
+        guard !query.isEmpty else { return Text(text) }
+        var attributed = AttributedString(text)
+        let lowerText = text.lowercased()
+        let lowerQuery = query.lowercased()
+        var searchStart = lowerText.startIndex
+        while searchStart < lowerText.endIndex,
+              let range = lowerText.range(of: lowerQuery, range: searchStart..<lowerText.endIndex) {
+            // Convert String.Index range to AttributedString range.
+            let startOffset = lowerText.distance(from: lowerText.startIndex, to: range.lowerBound)
+            let endOffset = lowerText.distance(from: lowerText.startIndex, to: range.upperBound)
+            if let attrStart = attributed.index(attributed.startIndex, offsetByCharacters: startOffset),
+               let attrEnd = attributed.index(attributed.startIndex, offsetByCharacters: endOffset) {
+                let attrRange = attrStart..<attrEnd
+                attributed[attrRange].backgroundColor = Theme.primary.opacity(0.4)
+                attributed[attrRange].foregroundColor = Theme.textPrimary
+            }
+            searchStart = range.upperBound
+        }
+        return Text(attributed)
+    }
+}
+
+private extension AttributedString {
+    func index(_ start: AttributedString.Index, offsetByCharacters n: Int) -> AttributedString.Index? {
+        self.characters.index(start, offsetBy: n, limitedBy: self.characters.endIndex)
     }
 }

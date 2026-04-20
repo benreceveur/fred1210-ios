@@ -85,6 +85,14 @@ struct SettingsView: View {
                             .font(.system(size: Theme.Font.xs))
                             .foregroundStyle(Theme.error)
                     }
+                    // Channel-level mute/unmute lives behind its own screen
+                    // to keep Settings scannable.
+                    NavigationLink {
+                        NotificationSettingsView()
+                    } label: {
+                        Label("Notification channels", systemImage: "slider.horizontal.3")
+                    }
+                    .disabled(pushManager.authState == .denied)
                 }
 
                 Section {
