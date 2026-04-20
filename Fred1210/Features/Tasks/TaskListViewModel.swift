@@ -108,10 +108,11 @@ final class TaskListViewModel: ObservableObject {
 
     private func priorityRank(_ priority: Components.Schemas.Task.PriorityPayload) -> Int {
         switch priority {
-        case .critical: return 0
+        case .urgent: return 0
         case .high: return 1
         case .medium: return 2
         case .low: return 3
+        case .none: return 4
         }
     }
 }
