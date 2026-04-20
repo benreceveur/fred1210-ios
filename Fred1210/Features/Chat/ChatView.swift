@@ -71,6 +71,9 @@ private struct ChatContentView: View {
                 }
             }
             .refreshable { await viewModel.loadHistory() }
+            // Drag the message list down to dismiss the keyboard. Matches
+            // the gesture users expect from Messages / Mail.
+            .scrollDismissesKeyboard(.interactively)
         }
     }
 
@@ -87,6 +90,15 @@ private struct ChatContentView: View {
                 .focused($inputFocused)
                 .submitLabel(.send)
                 .onSubmit { Task { await viewModel.send() } }
+                // Adds a "Done" button above the keyboard. Without this,
+                // the multiline TextField has no built-in way to dismiss
+                // — Return inserts a newline instead of submitting.
+                .toolbar {
+                    ToolbarItemGroup(placement: .keyboard) {
+                        Spacer()
+                        Button("Done") { inputFocused = false }
+                    }
+                }
 
             Button {
                 Task { await viewModel.send() }
