@@ -133,10 +133,11 @@ private struct TaskRow: View {
 
     private var priorityColor: Color {
         switch task.priority {
-        case .critical: return Theme.error
+        case .urgent: return Theme.error
         case .high: return Theme.warning
         case .medium: return Theme.info
         case .low: return Theme.textMuted
+        case .none: return Theme.textMuted
         }
     }
 
@@ -173,7 +174,7 @@ private struct CreateTaskSheet: View {
                 }
                 Section("Priority") {
                     Picker("Priority", selection: $priority) {
-                        Text("Critical").tag(Components.Schemas.CreateTaskRequest.PriorityPayload.critical)
+                        Text("Urgent").tag(Components.Schemas.CreateTaskRequest.PriorityPayload.urgent)
                         Text("High").tag(Components.Schemas.CreateTaskRequest.PriorityPayload.high)
                         Text("Medium").tag(Components.Schemas.CreateTaskRequest.PriorityPayload.medium)
                         Text("Low").tag(Components.Schemas.CreateTaskRequest.PriorityPayload.low)

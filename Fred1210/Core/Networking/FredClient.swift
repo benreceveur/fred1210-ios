@@ -31,6 +31,7 @@ final class FredClient {
     private func makeClient() -> Client {
         Client(
             serverURL: config.hostURL,
+            configuration: Configuration(dateTranscoder: TolerantISO8601Transcoder()),
             transport: URLSessionTransport(configuration: .init(session: session))
         )
     }
