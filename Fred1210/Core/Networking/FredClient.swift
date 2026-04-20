@@ -157,6 +157,15 @@ final class FredClient {
         }
     }
 
+    func listRecentResearch(limit: Int = 5) async throws -> [Components.Schemas.ResearchItem] {
+        try await logged("GET", "/api/agent/research/recent") {
+            let output = try await makeClient().listRecentResearch(
+                .init(query: .init(limit: limit))
+            )
+            return try output.ok.body.json.items
+        }
+    }
+
     func fetchVoiceHealth() async throws -> Components.Schemas.VoiceHealthResponse {
         try await logged("GET", "/voice/health") {
             let output = try await makeClient().voiceHealth(.init())

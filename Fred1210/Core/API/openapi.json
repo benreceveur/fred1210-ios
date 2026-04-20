@@ -241,6 +241,30 @@
         }
       }
     },
+    "/api/agent/research/recent": {
+      "get": {
+        "tags": ["agent"],
+        "summary": "Recent research items",
+        "description": "List recent research findings saved via research_save. Used by the iOS dashboard 'Recent Research' card.",
+        "operationId": "listRecentResearch",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "default": 5, "minimum": 1, "maximum": 50 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Recent research items (newest first)",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ResearchListResponse" } }
+            }
+          }
+        }
+      }
+    },
     "/voice/turn": {
       "post": {
         "tags": ["voice"],
@@ -487,6 +511,32 @@
               "error": { "type": "string" }
             }
           },
+          "calendar": {
+            "type": "object",
+            "description": "Today's calendar events summary. configured=false means Google Calendar credentials aren't set on the server.",
+            "properties": {
+              "configured": { "type": "boolean" },
+              "count": { "type": "integer" },
+              "next": {
+                "type": "object",
+                "nullable": true,
+                "properties": {
+                  "summary": { "type": "string" },
+                  "start": { "type": "string", "nullable": true }
+                }
+              },
+              "error": { "type": "string" }
+            }
+          },
+          "automations": {
+            "type": "object",
+            "description": "Count of automation rules / agent loops — detail at /api/agent/automations.",
+            "properties": {
+              "total": { "type": "integer" },
+              "enabled": { "type": "integer" },
+              "error": { "type": "string" }
+            }
+          },
           "nemo": {
             "type": "object",
             "properties": {
@@ -555,6 +605,22 @@
         "properties": {
           "tasks": { "type": "array", "items": { "$ref": "#/components/schemas/Task" } },
           "count": { "type": "integer" }
+        }
+      },
+      "ResearchItem": {
+        "type": "object",
+        "required": ["id", "title", "savedAt"],
+        "properties": {
+          "id": { "type": "string", "description": "Filename (without .md)" },
+          "title": { "type": "string" },
+          "savedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ResearchListResponse": {
+        "type": "object",
+        "required": ["items"],
+        "properties": {
+          "items": { "type": "array", "items": { "$ref": "#/components/schemas/ResearchItem" } }
         }
       },
       "TaskWrapper": {

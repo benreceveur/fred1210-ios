@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct TaskListView: View {
     @EnvironmentObject var clientHolder: ClientHolder
@@ -14,6 +15,33 @@ private struct TaskListContentView: View {
 
     init(client: FredClient) {
         _viewModel = StateObject(wrappedValue: TaskListViewModel(client: client))
+    }
+
+    /// Wraps a priority-menu entry so each button forwards to the view
+    /// model without callers repeating the Task { await } boilerplate.
+    private func priorityButton(
+        _ title: String, _ icon: String,
+        _ priority: Components.Schemas.UpdateTaskRequest.PriorityPayload,
+        task: Components.Schemas.Task
+    ) -> some View {
+        Button {
+            Task { await viewModel.setPriority(task, to: priority) }
+        } label: {
+            Label(title, systemImage: icon)
+        }
+    }
+
+    /// Wraps a status-menu entry.
+    private func statusButton(
+        _ title: String, _ icon: String,
+        _ status: Components.Schemas.UpdateTaskRequest.StatusPayload,
+        task: Components.Schemas.Task
+    ) -> some View {
+        Button {
+            Task { await viewModel.setStatus(task, to: status) }
+        } label: {
+            Label(title, systemImage: icon)
+        }
     }
 
     var body: some View {
@@ -38,6 +66,22 @@ private struct TaskListContentView: View {
                         ForEach(viewModel.tasks, id: \.id) { task in
                             TaskRow(task: task)
                                 .listRowBackground(Theme.bgCard)
+                                .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                                    Button {
+                                        Task { await viewModel.setStatus(task, to: .done) }
+                                    } label: {
+                                        Label("Done", systemImage: "checkmark.circle.fill")
+                                    }
+                                    .tint(Theme.success)
+                                }
+                                .swipeActions(edge: .leading, allowsFullSwipe: false) {
+                                    Button {
+                                        Task { await viewModel.toggleStatus(task) }
+                                    } label: {
+                                        Label("Advance", systemImage: "arrow.right.circle")
+                                    }
+                                    .tint(Theme.primary)
+                                }
                                 .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                                     Button(role: .destructive) {
                                         Task { await viewModel.delete(task) }
@@ -45,13 +89,32 @@ private struct TaskListContentView: View {
                                         Label("Delete", systemImage: "trash")
                                     }
                                 }
-                                .swipeActions(edge: .leading) {
-                                    Button {
-                                        Task { await viewModel.toggleStatus(task) }
-                                    } label: {
-                                        Label("Advance", systemImage: "arrow.right.circle")
+                                .contextMenu {
+                                    Menu("Priority") {
+                                        priorityButton("Urgent", "flame", .urgent, task: task)
+                                        priorityButton("High", "arrow.up", .high, task: task)
+                                        priorityButton("Medium", "minus", .medium, task: task)
+                                        priorityButton("Low", "arrow.down", .low, task: task)
+                                        priorityButton("None", "circle", .none, task: task)
                                     }
-                                    .tint(Theme.primary)
+                                    Menu("Status") {
+                                        statusButton("Inbox", "tray", .inbox, task: task)
+                                        statusButton("To Do", "circle", .todo, task: task)
+                                        statusButton("In Progress", "arrow.triangle.2.circlepath", .inProgress, task: task)
+                                        statusButton("Review", "eye", .review, task: task)
+                                        statusButton("Done", "checkmark.circle", .done, task: task)
+                                    }
+                                    Divider()
+                                    Button {
+                                        UIPasteboard.general.string = task.title
+                                    } label: {
+                                        Label("Copy title", systemImage: "doc.on.doc")
+                                    }
+                                    Button(role: .destructive) {
+                                        Task { await viewModel.delete(task) }
+                                    } label: {
+                                        Label("Delete", systemImage: "trash")
+                                    }
                                 }
                         }
                     }

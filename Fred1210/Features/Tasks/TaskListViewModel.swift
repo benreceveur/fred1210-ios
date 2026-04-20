@@ -79,6 +79,16 @@ final class TaskListViewModel: ObservableObject {
         await patch(task.id, updates: .init(status: nextStatus))
     }
 
+    /// Directly set a task's status — used by the long-press context menu.
+    func setStatus(_ task: Components.Schemas.Task, to status: Components.Schemas.UpdateTaskRequest.StatusPayload) async {
+        await patch(task.id, updates: .init(status: status))
+    }
+
+    /// Directly set a task's priority — used by the long-press context menu.
+    func setPriority(_ task: Components.Schemas.Task, to priority: Components.Schemas.UpdateTaskRequest.PriorityPayload) async {
+        await patch(task.id, updates: .init(priority: priority))
+    }
+
     func delete(_ task: Components.Schemas.Task) async {
         // Optimistic removal for snappy UX; revert on error.
         let index = tasks.firstIndex(where: { $0.id == task.id })

@@ -33,6 +33,21 @@ struct DashboardSnapshot {
     struct Pipelines {
         var total: Int
     }
+    struct Automations {
+        var total: Int
+        var enabled: Int
+    }
+    struct Calendar {
+        var configured: Bool
+        var count: Int
+        var nextSummary: String?
+        var nextStart: String?
+    }
+    struct ResearchItem: Identifiable {
+        let id: String
+        let title: String
+        let savedAt: Date
+    }
 
     var agentStatus: Components.Schemas.AgentStatus?
     var usageToday = UsageToday(requests: 0, tokens: 0, cost: 0, errors: 0)
@@ -42,6 +57,9 @@ struct DashboardSnapshot {
     var memory = MemoryStats(facts: 0, conversations: 0, lastActive: nil)
     var schedule = Schedule(entriesCount: 0, remindersCount: 0)
     var pipelines = Pipelines(total: 0)
+    var automations = Automations(total: 0, enabled: 0)
+    var calendar = Calendar(configured: false, count: 0, nextSummary: nil, nextStart: nil)
+    var recentResearch: [ResearchItem] = []
     var upstreamMonitors: Int = 0
     var transports: [Components.Schemas.TransportHealth] = []
     var nemoPlannerSuccessRate: Double?
@@ -62,7 +80,9 @@ final class DashboardViewModel: ObservableObject {
         self.client = client
     }
 
-    /// Fetch dashboard, status, and transport health in parallel.
+    /// Fetch dashboard, status, transport health, and recent research
+    /// in parallel. Research failures don't block the dashboard — the
+    /// card renders empty if the endpoint fails.
     func refresh() async {
         isLoading = true
         defer { isLoading = false }
@@ -70,8 +90,14 @@ final class DashboardViewModel: ObservableObject {
             async let dashboardTask = client.fetchDashboard()
             async let statusTask = client.fetchAgentStatus()
             async let transportTask = client.fetchTransportHealth()
-            let (dashboard, status, transports) = try await (dashboardTask, statusTask, transportTask)
-            snapshot = normalize(dashboard: dashboard, status: status, transports: transports)
+            async let researchTask: [Components.Schemas.ResearchItem] = {
+                do { return try await client.listRecentResearch(limit: 5) }
+                catch { return [] }
+            }()
+            let (dashboard, status, transports, research) = try await (
+                dashboardTask, statusTask, transportTask, researchTask
+            )
+            snapshot = normalize(dashboard: dashboard, status: status, transports: transports, research: research)
             displayError = nil
         } catch {
             displayError = FredDisplayError.from(
@@ -88,7 +114,8 @@ final class DashboardViewModel: ObservableObject {
     private func normalize(
         dashboard: Components.Schemas.DashboardResponse,
         status: Components.Schemas.AgentStatus,
-        transports: [Components.Schemas.TransportHealth]
+        transports: [Components.Schemas.TransportHealth],
+        research: [Components.Schemas.ResearchItem]
     ) -> DashboardSnapshot {
         var snap = DashboardSnapshot()
         snap.agentStatus = status
@@ -148,6 +175,26 @@ final class DashboardViewModel: ObservableObject {
 
         if let pipelines = dashboard.pipelines {
             snap.pipelines = .init(total: pipelines.count ?? pipelines.items?.count ?? 0)
+        }
+
+        if let automations = dashboard.automations, automations.error == nil {
+            snap.automations = .init(
+                total: automations.total ?? 0,
+                enabled: automations.enabled ?? 0
+            )
+        }
+
+        if let calendar = dashboard.calendar {
+            snap.calendar = .init(
+                configured: calendar.configured ?? false,
+                count: calendar.count ?? 0,
+                nextSummary: calendar.next?.summary,
+                nextStart: calendar.next?.start
+            )
+        }
+
+        snap.recentResearch = research.map { item in
+            .init(id: item.id, title: item.title, savedAt: item.savedAt)
         }
 
         if let upstream = dashboard.upstream, upstream.error == nil {
