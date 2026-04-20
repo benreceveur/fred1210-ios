@@ -22,7 +22,7 @@ settings:
   base:
     SWIFT_VERSION: "5.10"
     MARKETING_VERSION: "2.1.0"
-    CURRENT_PROJECT_VERSION: "2"
+    CURRENT_PROJECT_VERSION: "3"
     ENABLE_USER_SCRIPT_SANDBOXING: NO
     CODE_SIGN_STYLE: Automatic
     GENERATE_INFOPLIST_FILE: YES
@@ -48,15 +48,32 @@ targets:
       - path: Fred1210
         excludes:
           - "**/.DS_Store"
+    # Explicit Info.plist so the custom FredDefaultHost key gets written
+    # into the bundle. Xcode's INFOPLIST_KEY_<Name> only auto-writes for
+    # Apple-defined keys — user keys like FredDefaultHost are silently
+    # dropped, which is what caused every 2.0.0/2.1.0 build pre-fix to
+    # fall back to the unresolvable example host.
+    info:
+      path: Fred1210/Info.plist
+      properties:
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        CFBundleDisplayName: Fred1210
+        UILaunchScreen:
+          UILaunchScreen_Generation: true
+        UIApplicationSupportsIndirectInputEvents: true
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        NSMicrophoneUsageDescription: "Fred needs microphone access for voice conversations"
+        UIBackgroundModes:
+          - remote-notification
+          - audio
+        ITSAppUsesNonExemptEncryption: false
+        FredDefaultHost: "$(FRED_DEFAULT_HOST)"
     settings:
       base:
         # PRODUCT_BUNDLE_IDENTIFIER comes from Config/Local.xcconfig
-        INFOPLIST_KEY_CFBundleDisplayName: Fred1210
-        INFOPLIST_KEY_UILaunchScreen_Generation: YES
-        INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
-        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
-        INFOPLIST_KEY_NSMicrophoneUsageDescription: "Fred needs microphone access for voice conversations"
-        INFOPLIST_KEY_UIBackgroundModes: "remote-notification audio"
+        GENERATE_INFOPLIST_FILE: NO
         TARGETED_DEVICE_FAMILY: "1"
     # Keychain access group so future extensions (share extension,
     # widget, Siri intent, watch app) can read the same host URL and

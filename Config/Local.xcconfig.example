@@ -14,8 +14,14 @@ DEVELOPMENT_TEAM = TEAM_ID_HERE
 
 // Default Fred server URL the app connects to on first launch.
 // Must be a fully-qualified URL. User can override at runtime via the
-// in-app settings screen (stored in Keychain).
-FRED_DEFAULT_HOST = https://fred.example.ts.net
+// Settings tab (persisted to Keychain).
+//
+// NOTE: xcconfig treats "//" as a line-comment delimiter, so a bare
+// "https://" gets truncated to "https:" at parse time. Use the /$()/
+// escape — Xcode evaluates $() to empty at build time, reassembling
+// the full URL. Without this, every build here shipped with a broken
+// host and every API call erred at the transport layer.
+FRED_DEFAULT_HOST = https:/$()/fred.example.ts.net
 
 // App bundle identifier. Must match the ASC app record for TestFlight.
 PRODUCT_BUNDLE_IDENTIFIER = com.example.fred1210
