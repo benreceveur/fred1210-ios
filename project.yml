@@ -56,6 +56,11 @@ targets:
         INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
         INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
         INFOPLIST_KEY_NSMicrophoneUsageDescription: "Fred needs microphone access for voice conversations"
+        # Fred only uses standard HTTPS/TLS (exempt under US export regs).
+        # Declaring this up-front so TestFlight builds skip the manual
+        # "Export Compliance" prompt — without it, builds land in ASC
+        # as MISSING_EXPORT_COMPLIANCE and are invisible to testers.
+        INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
         INFOPLIST_KEY_UIBackgroundModes: "remote-notification audio"
         TARGETED_DEVICE_FAMILY: "1"
     dependencies:
