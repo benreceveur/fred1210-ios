@@ -19,9 +19,16 @@ private struct VoiceContentView: View {
         NavigationStack {
             VStack(spacing: 0) {
                 resultsPane
+                if viewModel.state == .recording {
+                    WaveformView(levels: viewModel.audioLevels)
+                        .frame(height: 60)
+                        .padding(.horizontal, Theme.Spacing.lg)
+                        .transition(.opacity)
+                }
                 latencyOverlay
                 buttonArea
             }
+            .animation(.easeInOut(duration: 0.2), value: viewModel.state)
             .background(Theme.bgDark)
             .navigationTitle("Voice")
             .navigationBarTitleDisplayMode(.inline)

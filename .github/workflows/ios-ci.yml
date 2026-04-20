@@ -111,7 +111,7 @@ jobs:
             sed -i '' "s|^DEVELOPMENT_TEAM = .*|DEVELOPMENT_TEAM = $FASTLANE_TEAM_ID|" Config/Local.xcconfig
           fi
           if [ -n "$FASTLANE_APP_IDENTIFIER" ]; then
-            sed -i '' "s|^PRODUCT_BUNDLE_IDENTIFIER = .*|PRODUCT_BUNDLE_IDENTIFIER = $FASTLANE_APP_IDENTIFIER|" Config/Local.xcconfig
+            sed -i '' "s|^MAIN_APP_BUNDLE_ID = .*|MAIN_APP_BUNDLE_ID = $FASTLANE_APP_IDENTIFIER|" Config/Local.xcconfig
           fi
           if [ -n "$FRED_DEFAULT_HOST" ]; then
             sed -i '' "s|^FRED_DEFAULT_HOST = .*|FRED_DEFAULT_HOST = $FRED_DEFAULT_HOST|" Config/Local.xcconfig
