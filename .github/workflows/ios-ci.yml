@@ -114,7 +114,11 @@ jobs:
             sed -i '' "s|^PRODUCT_BUNDLE_IDENTIFIER = .*|PRODUCT_BUNDLE_IDENTIFIER = $FASTLANE_APP_IDENTIFIER|" Config/Local.xcconfig
           fi
           if [ -n "$FRED_DEFAULT_HOST" ]; then
-            sed -i '' "s|^FRED_DEFAULT_HOST = .*|FRED_DEFAULT_HOST = $FRED_DEFAULT_HOST|" Config/Local.xcconfig
+            # xcconfig treats "//" as a comment — insert /$()/ so Xcode's
+            # parser doesn't truncate "https://" to "https:". The $()
+            # expands to empty at build time, reassembling the real URL.
+            ESCAPED_HOST=$(printf '%s' "$FRED_DEFAULT_HOST" | sed 's|://|:/$()/|')
+            sed -i '' "s|^FRED_DEFAULT_HOST = .*|FRED_DEFAULT_HOST = $ESCAPED_HOST|" Config/Local.xcconfig
           fi
 
       - name: Generate Xcode project
