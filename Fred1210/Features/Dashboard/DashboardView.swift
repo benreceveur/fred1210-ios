@@ -228,39 +228,47 @@ private struct DashboardContentView: View {
     // MARK: - Research card
 
     private var researchCard: some View {
-        Card {
-            VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-                HStack {
-                    Image(systemName: "doc.text.magnifyingglass")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(Theme.primary)
-                    Text("Recent research")
-                        .font(.system(size: Theme.Font.xs, weight: .semibold))
-                        .foregroundStyle(Theme.textMuted)
-                        .tracking(0.5)
-                        .textCase(.uppercase)
-                    Spacer()
-                }
-                if viewModel.snapshot.recentResearch.isEmpty {
-                    Text("Nothing saved yet. Ask Fred to research something and save the findings.")
-                        .font(.system(size: Theme.Font.sm))
-                        .foregroundStyle(Theme.textMuted)
-                } else {
-                    ForEach(viewModel.snapshot.recentResearch.prefix(3)) { item in
-                        HStack(alignment: .firstTextBaseline) {
-                            Text(item.title)
-                                .font(.system(size: Theme.Font.sm))
-                                .foregroundStyle(Theme.textPrimary)
-                                .lineLimit(1)
-                            Spacer()
-                            Text(item.savedAt.formatted(.relative(presentation: .numeric)))
-                                .font(.system(size: Theme.Font.xs))
-                                .foregroundStyle(Theme.textMuted)
+        NavigationLink {
+            ResearchView()
+        } label: {
+            Card {
+                VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                    HStack {
+                        Image(systemName: "doc.text.magnifyingglass")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(Theme.primary)
+                        Text("Recent research")
+                            .font(.system(size: Theme.Font.xs, weight: .semibold))
+                            .foregroundStyle(Theme.textMuted)
+                            .tracking(0.5)
+                            .textCase(.uppercase)
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(Theme.textMuted)
+                    }
+                    if viewModel.snapshot.recentResearch.isEmpty {
+                        Text("Nothing saved yet. Ask Fred to research something and save the findings.")
+                            .font(.system(size: Theme.Font.sm))
+                            .foregroundStyle(Theme.textMuted)
+                    } else {
+                        ForEach(viewModel.snapshot.recentResearch.prefix(3)) { item in
+                            HStack(alignment: .firstTextBaseline) {
+                                Text(item.title)
+                                    .font(.system(size: Theme.Font.sm))
+                                    .foregroundStyle(Theme.textPrimary)
+                                    .lineLimit(1)
+                                Spacer()
+                                Text(item.savedAt.formatted(.relative(presentation: .numeric)))
+                                    .font(.system(size: Theme.Font.xs))
+                                    .foregroundStyle(Theme.textMuted)
+                            }
                         }
                     }
                 }
             }
         }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Auto refresh

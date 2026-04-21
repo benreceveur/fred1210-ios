@@ -13,6 +13,9 @@ struct TasksWidgetView: View {
         } else {
             switch family {
             case .systemSmall: smallView
+            case .accessoryRectangular: rectangularAccessory
+            case .accessoryCircular: circularAccessory
+            case .accessoryInline: inlineAccessory
             default: mediumView
             }
         }
@@ -116,6 +119,55 @@ struct TasksWidgetView: View {
         case "medium": return Color(red: 59/255, green: 130/255, blue: 246/255)
         case "low": return Color(red: 100/255, green: 116/255, blue: 139/255)
         default: return Color(red: 100/255, green: 116/255, blue: 139/255)
+        }
+    }
+
+    // MARK: - Lock Screen + StandBy accessories (iOS 16+)
+    //
+    // These render under the clock on the Lock Screen (rectangular) and in
+    // the row above it (circular / inline). StandBy picks them up on iOS
+    // 17+ automatically.
+
+    private var rectangularAccessory: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 4) {
+                Image(systemName: "checklist")
+                Text("\(entry.tasks.count) open")
+                    .font(.system(size: 13, weight: .semibold))
+            }
+            if let top = entry.tasks.first {
+                Text(top.title)
+                    .font(.system(size: 12))
+                    .lineLimit(2)
+            } else {
+                Text("All caught up")
+                    .font(.system(size: 12))
+                    .opacity(0.7)
+            }
+        }
+        .widgetAccentable()
+    }
+
+    private var circularAccessory: some View {
+        ZStack {
+            Circle().stroke(lineWidth: 2).opacity(0.3)
+            VStack(spacing: 0) {
+                Text("\(entry.tasks.count)")
+                    .font(.system(size: 22, weight: .bold, design: .rounded))
+                Text("tasks")
+                    .font(.system(size: 9))
+                    .opacity(0.7)
+            }
+        }
+        .widgetAccentable()
+    }
+
+    @ViewBuilder
+    private var inlineAccessory: some View {
+        if let top = entry.tasks.first {
+            Text("Fred · \(entry.tasks.count) open · \(top.title)")
+        } else {
+            Text("Fred · all caught up")
         }
     }
 }

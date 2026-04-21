@@ -36,6 +36,12 @@ struct TasksWidget: Widget {
         }
         .configurationDisplayName("Fred Tasks")
         .description("Your open tasks at a glance.")
-        .supportedFamilies([.systemSmall, .systemMedium])
+        // iOS 16+ Lock Screen + StandBy — accessoryRectangular lives below
+        // the clock; accessoryCircular/accessoryInline fit the complications
+        // row on iOS and the tiny slots on watchOS-style StandBy mode.
+        .supportedFamilies([
+            .systemSmall, .systemMedium,
+            .accessoryRectangular, .accessoryCircular, .accessoryInline,
+        ])
     }
 }

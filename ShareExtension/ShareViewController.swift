@@ -64,7 +64,7 @@ final class ShareViewController: SLComposeServiceViewController {
                         Task { @MainActor in
                             if let url = data as? URL {
                                 self?.sharedText = url.absoluteString
-                                self?.placeholder = "Ask Fred about this link…"
+                                self?.applyClassification(for: url)
                             }
                         }
                     }
@@ -79,6 +79,50 @@ final class ShareViewController: SLComposeServiceViewController {
                 }
             }
         }
+    }
+
+    /// Preselect a reasonable prompt based on the URL type so the user
+    /// doesn't have to type the same "research this TikTok" prefix every
+    /// time. The actual tagging happens server-side once Fred creates the
+    /// task — this just biases the message text Fred receives.
+    private func applyClassification(for url: URL) {
+        let host = url.host?.lowercased() ?? ""
+        let path = url.path.lowercased()
+
+        // GitHub issue link — suggest mirroring into Fred's board.
+        if host.contains("github.com"), path.contains("/issues/") {
+            placeholder = "Mirror this GitHub issue into Fred's task board"
+            let suggested = "Mirror this GitHub issue into my Fred task board for tracking: \(url.absoluteString)"
+            textView.text = suggested
+            textView.selectedRange = NSRange(location: suggested.count, length: 0)
+            return
+        }
+
+        if host.contains("tiktok.com") {
+            placeholder = "Review this TikTok for tooling / strategy ideas…"
+            let suggested = "Research this TikTok — does it have anything Fred or RelayForge should adopt? \(url.absoluteString)"
+            textView.text = suggested
+            textView.selectedRange = NSRange(location: suggested.count, length: 0)
+            return
+        }
+
+        if host.contains("instagram.com") {
+            placeholder = "Review this Instagram post / reel…"
+            let suggested = "Research this Instagram post — any signal for Fred or RelayForge? \(url.absoluteString)"
+            textView.text = suggested
+            textView.selectedRange = NSRange(location: suggested.count, length: 0)
+            return
+        }
+
+        if host.contains("substack.com") || host.contains("medium.com") {
+            placeholder = "Summarize this article…"
+            let suggested = "Summarize and flag anything actionable: \(url.absoluteString)"
+            textView.text = suggested
+            textView.selectedRange = NSRange(location: suggested.count, length: 0)
+            return
+        }
+
+        placeholder = "Ask Fred about this link…"
     }
 
     private func readHostURL() -> URL? {

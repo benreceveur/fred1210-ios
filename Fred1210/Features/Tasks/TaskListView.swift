@@ -11,9 +11,12 @@ struct TaskListView: View {
 }
 
 private struct TaskListContentView: View {
+    @EnvironmentObject var clientHolder: ClientHolder
     @StateObject private var viewModel: TaskListViewModel
     @State private var showingCreateSheet = false
     @State private var showCompleted = false
+    @State private var detailTaskId: String?
+    @State private var pushSheetTask: Components.Schemas.Task?
 
     init(client: FredClient) {
         _viewModel = StateObject(wrappedValue: TaskListViewModel(client: client))
@@ -33,6 +36,8 @@ private struct TaskListContentView: View {
     @ViewBuilder
     private func taskRow(_ task: Components.Schemas.Task) -> some View {
         TaskRow(task: task)
+            .contentShape(Rectangle())
+            .onTapGesture { detailTaskId = task.id }
             .listRowBackground(Theme.bgCard)
             .swipeActions(edge: .leading, allowsFullSwipe: true) {
                 Button {
@@ -53,7 +58,11 @@ private struct TaskListContentView: View {
             }
             .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                 Button(role: .destructive) {
-                    Task { await viewModel.delete(task) }
+                    Task {
+                        let ok = await Biometrics.authenticate(reason: "Delete task")
+                        guard ok else { return }
+                        await viewModel.delete(task)
+                    }
                 } label: {
                     Label("Delete", systemImage: "trash")
                 }
@@ -79,8 +88,22 @@ private struct TaskListContentView: View {
                 } label: {
                     Label("Copy title", systemImage: "doc.on.doc")
                 }
+                // Push-to-GitHub only when the task isn't already mirrored.
+                // `external:` tag means it came from GitHub, so the button
+                // would just confuse; hide it.
+                if !(task.tags ?? []).contains(where: { $0.hasPrefix("external:") }) {
+                    Button {
+                        pushSheetTask = task
+                    } label: {
+                        Label("Push to GitHub…", systemImage: "arrow.up.right.circle")
+                    }
+                }
                 Button(role: .destructive) {
-                    Task { await viewModel.delete(task) }
+                    Task {
+                        let ok = await Biometrics.authenticate(reason: "Delete task")
+                        guard ok else { return }
+                        await viewModel.delete(task)
+                    }
                 } label: {
                     Label("Delete", systemImage: "trash")
                 }
@@ -217,6 +240,26 @@ private struct TaskListContentView: View {
                     }
                 }
                 .presentationDetents([.medium, .large])
+            }
+            .sheet(item: Binding(
+                get: { detailTaskId.map { DetailIdentifier(id: $0) } },
+                set: { detailTaskId = $0?.id }
+            )) { wrapper in
+                TaskDetailView(taskId: wrapper.id, viewModel: viewModel)
+                    .environmentObject(clientHolder)
+            }
+            .sheet(item: Binding(
+                get: { pushSheetTask.map { PushTargetWrapper(task: $0) } },
+                set: { pushSheetTask = $0?.task }
+            )) { wrapper in
+                PushToGithubSheet(
+                    task: wrapper.task,
+                    onPush: { repoSlug in
+                        Task { await viewModel.pushToGithub(wrapper.task, repoSlug: repoSlug) }
+                    }
+                )
+                .environmentObject(clientHolder)
+                .presentationDetents([.medium])
             }
             .safeAreaInset(edge: .top, spacing: 0) {
                 if let error = viewModel.displayError {
@@ -409,4 +452,15 @@ private struct TaskAttachmentThumbnail: View {
             }
         }
     }
+}
+
+/// Wrapper to let `sheet(item:)` key off a task id (the generated
+/// Components.Schemas.Task is not Identifiable).
+private struct DetailIdentifier: Identifiable {
+    let id: String
+}
+
+private struct PushTargetWrapper: Identifiable {
+    let task: Components.Schemas.Task
+    var id: String { task.id }
 }

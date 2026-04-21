@@ -140,4 +140,27 @@ final class TaskListViewModel: ObservableObject {
         case .none: return 4
         }
     }
+
+    /// Tag this task with `gh-create:<owner>/<repo>` and kick off an
+    /// immediate sync so the upstream issue appears without waiting for
+    /// the next cron tick. After the server files the issue it'll rewrite
+    /// the tag to `external:<owner>/<repo>#<n>`; a refresh pulls that back.
+    func pushToGithub(_ task: Components.Schemas.Task, repoSlug: String) async {
+        let trimmed = repoSlug.trimmingCharacters(in: .whitespaces)
+        guard trimmed.contains("/") else { return }
+        let createTag = "gh-create:\(trimmed)"
+        let existing = task.tags ?? []
+        // No-op if already tagged (e.g. user tapped twice).
+        guard !existing.contains(createTag) else { return }
+        let patch = Components.Schemas.UpdateTaskRequest(
+            tags: existing + [createTag]
+        )
+        do {
+            _ = try await client.updateTask(id: task.id, patch: patch)
+            try? await client.triggerGithubSync()
+            await refresh()
+        } catch {
+            displayError = FredDisplayError.from(error, endpoint: "Push to GitHub", retry: nil)
+        }
+    }
 }

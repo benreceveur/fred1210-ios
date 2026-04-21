@@ -97,6 +97,16 @@ struct SettingsView: View {
 
                 Section {
                     NavigationLink {
+                        MemoryView()
+                    } label: {
+                        Label("Memory", systemImage: "brain")
+                    }
+                    NavigationLink {
+                        ConnectivityView()
+                    } label: {
+                        Label("Connectivity", systemImage: "antenna.radiowaves.left.and.right")
+                    }
+                    NavigationLink {
                         DiagnosticsView()
                     } label: {
                         Label("Diagnostics", systemImage: "stethoscope")
