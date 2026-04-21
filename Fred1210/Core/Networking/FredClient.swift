@@ -268,12 +268,21 @@ final class FredClient {
     // is less friction than re-generating the typed client every tweak.
 
     struct MemoryFact: Decodable, Identifiable {
-        let id: String
         let fact: String
         let category: String
         let timestamp: String
         let confidence: Double?
+        // Server uses `sourceType` in the stored record. `source` is the
+        // provenance string ("extracted", "user") — both are optional.
         let source: String?
+        let sourceType: String?
+        let trusted: Bool?
+
+        /// Identifiable id — synthesized from timestamp + first chars of the
+        /// fact so SwiftUI ForEach stays stable without the server needing
+        /// to mint one. Collisions only possible if two identical facts land
+        /// in the same millisecond, which the memory store dedupes anyway.
+        var id: String { "\(timestamp)·\(fact.prefix(40))" }
     }
 
     /// GET /api/agent/memory/facts?limit=N — returns the newest-first
