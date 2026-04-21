@@ -15,6 +15,9 @@ import OpenAPIURLSession
 @MainActor
 final class FredClient {
     private let config: FredConfig
+    /// Exposed so settings / diagnostics views can build ad-hoc URLs for
+    /// endpoints we haven't wrapped in typed methods yet.
+    var hostURL: URL { config.hostURL }
     private let session: URLSession
 
     init(config: FredConfig) {
@@ -255,6 +258,130 @@ final class FredClient {
         try await logged("DELETE", "/api/agent/tasks/\(id)") {
             let output = try await makeClient().deleteTask(.init(path: .init(id: id)))
             _ = try output.ok  // throws if not 2xx
+        }
+    }
+
+    // MARK: - Memory / research / github sync (raw URLSession)
+    //
+    // These endpoints aren't in the OpenAPI spec yet because the response
+    // shapes are simple, read-only, and iterate quickly. URLSession + JSON
+    // is less friction than re-generating the typed client every tweak.
+
+    struct MemoryFact: Decodable, Identifiable {
+        let id: String
+        let fact: String
+        let category: String
+        let timestamp: String
+        let confidence: Double?
+        let source: String?
+    }
+
+    /// GET /api/agent/memory/facts?limit=N — returns the newest-first
+    /// fact list with optional search. iOS Memory browser consumes this.
+    func listMemoryFacts(limit: Int = 100, query: String? = nil) async throws -> [MemoryFact] {
+        try await logged("GET", "/api/agent/memory/facts") {
+            var comps = URLComponents(
+                url: config.hostURL.appendingPathComponent("/api/agent/memory/facts"),
+                resolvingAgainstBaseURL: false
+            )
+            var items = [URLQueryItem(name: "limit", value: String(limit))]
+            if let query, !query.isEmpty { items.append(URLQueryItem(name: "q", value: query)) }
+            comps?.queryItems = items
+            guard let url = comps?.url else { throw FredError.transport(underlying: URLError(.badURL)) }
+            let (data, response) = try await session.data(from: url)
+            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+                throw FredError.server(
+                    status: (response as? HTTPURLResponse)?.statusCode ?? -1,
+                    message: String(data: data, encoding: .utf8)
+                )
+            }
+            struct Envelope: Decodable { let facts: [MemoryFact] }
+            return try JSONDecoder().decode(Envelope.self, from: data).facts
+        }
+    }
+
+    struct ResearchDetail: Decodable {
+        let id: String
+        let title: String
+        let content: String
+        let savedAt: String
+        let sizeBytes: Int
+    }
+
+    /// GET /api/agent/research/:id — full markdown body. Research feed
+    /// detail view consumes this.
+    func fetchResearchDetail(id: String) async throws -> ResearchDetail {
+        try await logged("GET", "/api/agent/research/\(id)") {
+            let url = config.hostURL.appendingPathComponent("/api/agent/research/\(id)")
+            let (data, response) = try await session.data(from: url)
+            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+                if (response as? HTTPURLResponse)?.statusCode == 404 { throw FredError.notFound }
+                throw FredError.server(
+                    status: (response as? HTTPURLResponse)?.statusCode ?? -1,
+                    message: String(data: data, encoding: .utf8)
+                )
+            }
+            return try JSONDecoder().decode(ResearchDetail.self, from: data)
+        }
+    }
+
+    /// GET /api/agent/github/sync/repos — configured sync targets. Repo
+    /// picker in the "Push to GitHub" sheet uses this.
+    func listConfiguredSyncRepos() async throws -> (repos: [String], owners: [String]) {
+        try await logged("GET", "/api/agent/github/sync/repos") {
+            let url = config.hostURL.appendingPathComponent("/api/agent/github/sync/repos")
+            let (data, response) = try await session.data(from: url)
+            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+                throw FredError.server(
+                    status: (response as? HTTPURLResponse)?.statusCode ?? -1,
+                    message: String(data: data, encoding: .utf8)
+                )
+            }
+            struct Envelope: Decodable { let repos: [String]; let owners: [String] }
+            let env = try JSONDecoder().decode(Envelope.self, from: data)
+            return (env.repos, env.owners)
+        }
+    }
+
+    struct PushTestResult: Decodable {
+        let sent: Int
+        let failed: Int
+        let skipped: Int?
+    }
+
+    /// POST /api/agent/push/test — triggers a test push to every registered
+    /// device. Used by the Connectivity panel in Settings.
+    func sendPushTest() async throws -> PushTestResult {
+        try await logged("POST", "/api/agent/push/test") {
+            let url = config.hostURL.appendingPathComponent("/api/agent/push/test")
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            let (data, response) = try await session.data(for: request)
+            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+                throw FredError.server(
+                    status: (response as? HTTPURLResponse)?.statusCode ?? -1,
+                    message: String(data: data, encoding: .utf8)
+                )
+            }
+            return try JSONDecoder().decode(PushTestResult.self, from: data)
+        }
+    }
+
+    /// POST /api/agent/github/sync — trigger an on-demand sync. Useful after
+    /// tagging a task with `gh-create:` so the upstream issue appears now
+    /// rather than on the next cron tick.
+    func triggerGithubSync() async throws {
+        try await logged("POST", "/api/agent/github/sync") {
+            let url = config.hostURL.appendingPathComponent("/api/agent/github/sync")
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            let (_, response) = try await session.data(for: request)
+            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+                throw FredError.server(
+                    status: (response as? HTTPURLResponse)?.statusCode ?? -1,
+                    message: nil
+                )
+            }
         }
     }
 

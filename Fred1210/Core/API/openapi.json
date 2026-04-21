@@ -265,6 +265,45 @@
         }
       }
     },
+    "/api/agent/research/{id}": {
+      "get": {
+        "tags": ["agent"],
+        "summary": "Research item detail",
+        "operationId": "getResearch",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Full research detail",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ResearchDetail" } }
+            }
+          },
+          "404": { "description": "Not found" }
+        }
+      }
+    },
+    "/api/agent/github/sync/repos": {
+      "get": {
+        "tags": ["agent"],
+        "summary": "Configured GitHub sync repos",
+        "operationId": "listSyncRepos",
+        "responses": {
+          "200": {
+            "description": "Repos and owners currently configured for sync",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/GithubSyncReposResponse" } }
+            }
+          }
+        }
+      }
+    },
     "/voice/turn": {
       "post": {
         "tags": ["voice"],
@@ -628,7 +667,19 @@
         "properties": {
           "id": { "type": "string", "description": "Filename (without .md)" },
           "title": { "type": "string" },
-          "savedAt": { "type": "string", "format": "date-time" }
+          "savedAt": { "type": "string", "format": "date-time" },
+          "summary": { "type": "string" }
+        }
+      },
+      "ResearchDetail": {
+        "type": "object",
+        "required": ["id", "title", "savedAt", "content", "sizeBytes"],
+        "properties": {
+          "id": { "type": "string" },
+          "title": { "type": "string" },
+          "content": { "type": "string" },
+          "savedAt": { "type": "string", "format": "date-time" },
+          "sizeBytes": { "type": "integer" }
         }
       },
       "ResearchListResponse": {
@@ -636,6 +687,14 @@
         "required": ["items"],
         "properties": {
           "items": { "type": "array", "items": { "$ref": "#/components/schemas/ResearchItem" } }
+        }
+      },
+      "GithubSyncReposResponse": {
+        "type": "object",
+        "required": ["repos", "owners"],
+        "properties": {
+          "repos": { "type": "array", "items": { "type": "string" } },
+          "owners": { "type": "array", "items": { "type": "string" } }
         }
       },
       "TaskWrapper": {
