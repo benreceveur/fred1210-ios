@@ -13,9 +13,78 @@ struct TaskListView: View {
 private struct TaskListContentView: View {
     @StateObject private var viewModel: TaskListViewModel
     @State private var showingCreateSheet = false
+    @State private var showCompleted = false
 
     init(client: FredClient) {
         _viewModel = StateObject(wrappedValue: TaskListViewModel(client: client))
+    }
+
+    private var openTasks: [Components.Schemas.Task] {
+        viewModel.tasks.filter { $0.status != .done }
+    }
+
+    private var completedTasks: [Components.Schemas.Task] {
+        viewModel.tasks.filter { $0.status == .done }
+    }
+
+    /// Renders a single task row with the standard swipe actions + context
+    /// menu. Pulled out as a helper so open-tasks and the collapsible
+    /// Completed section both get the same affordances without duplication.
+    @ViewBuilder
+    private func taskRow(_ task: Components.Schemas.Task) -> some View {
+        TaskRow(task: task)
+            .listRowBackground(Theme.bgCard)
+            .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                Button {
+                    Task { await viewModel.setStatus(task, to: task.status == .done ? .todo : .done) }
+                } label: {
+                    Label(task.status == .done ? "Reopen" : "Done",
+                          systemImage: task.status == .done ? "arrow.uturn.backward.circle" : "checkmark.circle.fill")
+                }
+                .tint(task.status == .done ? Theme.primary : Theme.success)
+            }
+            .swipeActions(edge: .leading, allowsFullSwipe: false) {
+                Button {
+                    Task { await viewModel.toggleStatus(task) }
+                } label: {
+                    Label("Advance", systemImage: "arrow.right.circle")
+                }
+                .tint(Theme.primary)
+            }
+            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                Button(role: .destructive) {
+                    Task { await viewModel.delete(task) }
+                } label: {
+                    Label("Delete", systemImage: "trash")
+                }
+            }
+            .contextMenu {
+                Menu("Priority") {
+                    priorityButton("Urgent", "flame", .urgent, task: task)
+                    priorityButton("High", "arrow.up", .high, task: task)
+                    priorityButton("Medium", "minus", .medium, task: task)
+                    priorityButton("Low", "arrow.down", .low, task: task)
+                    priorityButton("None", "circle", .none, task: task)
+                }
+                Menu("Status") {
+                    statusButton("Inbox", "tray", .inbox, task: task)
+                    statusButton("To Do", "circle", .todo, task: task)
+                    statusButton("In Progress", "arrow.triangle.2.circlepath", .inProgress, task: task)
+                    statusButton("Review", "eye", .review, task: task)
+                    statusButton("Done", "checkmark.circle", .done, task: task)
+                }
+                Divider()
+                Button {
+                    UIPasteboard.general.string = task.title
+                } label: {
+                    Label("Copy title", systemImage: "doc.on.doc")
+                }
+                Button(role: .destructive) {
+                    Task { await viewModel.delete(task) }
+                } label: {
+                    Label("Delete", systemImage: "trash")
+                }
+            }
     }
 
     /// Wraps a priority-menu entry so each button forwards to the view
@@ -64,59 +133,50 @@ private struct TaskListContentView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     List {
-                        ForEach(viewModel.tasks, id: \.id) { task in
-                            TaskRow(task: task)
-                                .listRowBackground(Theme.bgCard)
-                                .swipeActions(edge: .leading, allowsFullSwipe: true) {
-                                    Button {
-                                        Task { await viewModel.setStatus(task, to: .done) }
-                                    } label: {
-                                        Label("Done", systemImage: "checkmark.circle.fill")
-                                    }
-                                    .tint(Theme.success)
-                                }
-                                .swipeActions(edge: .leading, allowsFullSwipe: false) {
-                                    Button {
-                                        Task { await viewModel.toggleStatus(task) }
-                                    } label: {
-                                        Label("Advance", systemImage: "arrow.right.circle")
-                                    }
-                                    .tint(Theme.primary)
-                                }
-                                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                                    Button(role: .destructive) {
-                                        Task { await viewModel.delete(task) }
-                                    } label: {
-                                        Label("Delete", systemImage: "trash")
-                                    }
-                                }
-                                .contextMenu {
-                                    Menu("Priority") {
-                                        priorityButton("Urgent", "flame", .urgent, task: task)
-                                        priorityButton("High", "arrow.up", .high, task: task)
-                                        priorityButton("Medium", "minus", .medium, task: task)
-                                        priorityButton("Low", "arrow.down", .low, task: task)
-                                        priorityButton("None", "circle", .none, task: task)
-                                    }
-                                    Menu("Status") {
-                                        statusButton("Inbox", "tray", .inbox, task: task)
-                                        statusButton("To Do", "circle", .todo, task: task)
-                                        statusButton("In Progress", "arrow.triangle.2.circlepath", .inProgress, task: task)
-                                        statusButton("Review", "eye", .review, task: task)
-                                        statusButton("Done", "checkmark.circle", .done, task: task)
-                                    }
-                                    Divider()
-                                    Button {
-                                        UIPasteboard.general.string = task.title
-                                    } label: {
-                                        Label("Copy title", systemImage: "doc.on.doc")
-                                    }
-                                    Button(role: .destructive) {
-                                        Task { await viewModel.delete(task) }
-                                    } label: {
-                                        Label("Delete", systemImage: "trash")
+                        // Open work lives in the default (unheadered) section so
+                        // the common case — active tasks — reads like a clean
+                        // list. Completed work is tucked into a collapsible
+                        // footer section so it doesn't dilute the outstanding view.
+                        if openTasks.isEmpty {
+                            HStack {
+                                Image(systemName: "checkmark.seal.fill")
+                                    .foregroundStyle(Theme.success)
+                                Text("All caught up — no open tasks")
+                                    .font(.system(size: Theme.Font.md))
+                                    .foregroundStyle(Theme.textMuted)
+                            }
+                            .listRowBackground(Theme.bgCard)
+                        } else {
+                            ForEach(openTasks, id: \.id) { task in
+                                taskRow(task)
+                            }
+                        }
+
+                        if !completedTasks.isEmpty {
+                            Section {
+                                if showCompleted {
+                                    ForEach(completedTasks, id: \.id) { task in
+                                        taskRow(task)
                                     }
                                 }
+                            } header: {
+                                Button {
+                                    withAnimation(.easeOut(duration: 0.2)) {
+                                        showCompleted.toggle()
+                                    }
+                                } label: {
+                                    HStack {
+                                        Image(systemName: showCompleted ? "chevron.down" : "chevron.right")
+                                            .font(.system(size: 11, weight: .bold))
+                                        Text("Completed · \(completedTasks.count)")
+                                            .font(.system(size: Theme.Font.xs, weight: .semibold))
+                                        Spacer()
+                                    }
+                                    .foregroundStyle(Theme.textMuted)
+                                    .textCase(nil)
+                                }
+                                .buttonStyle(.plain)
+                            }
                         }
                     }
                     .listStyle(.plain)
