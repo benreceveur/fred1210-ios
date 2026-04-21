@@ -20,8 +20,14 @@ final class FredClient {
     init(config: FredConfig) {
         self.config = config
         let configuration = URLSessionConfiguration.default
-        configuration.timeoutIntervalForRequest = 15
-        configuration.timeoutIntervalForResource = 120
+        // Fred's /api/agent/chat routes through the full agent pipeline
+        // (LLM + tool loop + council fallback) which routinely takes
+        // 20–60s under normal load. A 15s request timeout was
+        // cancelling the request before the server finished,
+        // surfacing as "send error" in the Chat tab. 120s matches the
+        // existing resource timeout and covers p99 pipeline latency.
+        configuration.timeoutIntervalForRequest = 120
+        configuration.timeoutIntervalForResource = 180
         configuration.waitsForConnectivity = false
         self.session = URLSession(configuration: configuration)
     }
@@ -90,6 +96,107 @@ final class FredClient {
         }
     }
 
+    /// Lifecycle events emitted by the `/api/agent/chat/stream` SSE endpoint.
+    /// The server runs the full agent pipeline (LLM + tool loop) and streams
+    /// each tool invocation so the Chat UI can show progress mid-turn.
+    enum ChatStreamEvent {
+        case toolCall(name: String, argsPreview: String)
+        case toolResult(name: String, ok: Bool, latencyMs: Int, errorPreview: String?)
+        case done(content: String, provider: String?, iterations: Int)
+        case error(message: String)
+    }
+
+    /// Streams chat events as they happen. Consumers render them inline in the
+    /// conversation so a long tool-using turn doesn't look like a frozen
+    /// spinner. The stream terminates when the pipeline emits `done` or
+    /// `error`, or when the caller cancels the enclosing Task.
+    func sendChatMessageStreaming(_ text: String) -> AsyncThrowingStream<ChatStreamEvent, Error> {
+        let hostURL = config.hostURL
+        let session = self.session
+        return AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    let url = hostURL.appendingPathComponent("/api/agent/chat/stream")
+                    var request = URLRequest(url: url)
+                    request.httpMethod = "POST"
+                    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                    request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+                    request.httpBody = try JSONSerialization.data(
+                        withJSONObject: ["message": text], options: []
+                    )
+
+                    let (bytes, response) = try await session.bytes(for: request)
+                    guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+                        let code = (response as? HTTPURLResponse)?.statusCode ?? -1
+                        throw FredError.server(status: code, message: nil)
+                    }
+
+                    for try await line in bytes.lines {
+                        try Task.checkCancellation()
+                        // SSE frames we care about are `data: {...}`. Ignore
+                        // comment heartbeats (`: ping`) and blank separators.
+                        guard line.hasPrefix("data: ") else { continue }
+                        let jsonString = String(line.dropFirst("data: ".count))
+                        guard let jsonData = jsonString.data(using: .utf8) else { continue }
+                        if let event = Self.parseStreamEvent(from: jsonData) {
+                            continuation.yield(event)
+                            if case .done = event { break }
+                            if case .error = event { break }
+                        }
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+
+    private static func parseStreamEvent(from data: Data) -> ChatStreamEvent? {
+        guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let type = obj["type"] as? String else { return nil }
+        switch type {
+        case "tool_call":
+            let name = (obj["name"] as? String) ?? "tool"
+            let args = obj["args"] as? [String: Any] ?? [:]
+            return .toolCall(name: name, argsPreview: summarize(args))
+        case "tool_result":
+            let name = (obj["name"] as? String) ?? "tool"
+            let ok = (obj["ok"] as? Bool) ?? false
+            let latency = (obj["latencyMs"] as? Int) ?? 0
+            let errorPreview = obj["errorPreview"] as? String
+            return .toolResult(name: name, ok: ok, latencyMs: latency, errorPreview: errorPreview)
+        case "done":
+            let content = (obj["content"] as? String) ?? ""
+            let provider = obj["provider"] as? String
+            let iterations = (obj["iterations"] as? Int) ?? 0
+            return .done(content: content, provider: provider, iterations: iterations)
+        case "error":
+            let message = (obj["message"] as? String) ?? "Stream error"
+            return .error(message: message)
+        default:
+            return nil
+        }
+    }
+
+    /// Compact, human-readable one-liner of a tool's arguments for the Chat
+    /// chip — truncated so big payloads don't blow up the row height.
+    private static func summarize(_ args: [String: Any]) -> String {
+        let first = args.first
+        guard let (key, value) = first else { return "" }
+        let preview: String
+        if let str = value as? String { preview = str }
+        else if JSONSerialization.isValidJSONObject(value) {
+            preview = (try? JSONSerialization.data(withJSONObject: value, options: []))
+                .flatMap { String(data: $0, encoding: .utf8) } ?? "…"
+        } else {
+            preview = String(describing: value)
+        }
+        let trimmed = preview.prefix(60)
+        return args.count == 1 ? "\(key): \(trimmed)" : "\(key): \(trimmed) +\(args.count - 1)"
+    }
+
     func fetchHistory() async throws -> Components.Schemas.HistoryResponse {
         try await logged("GET", "/api/agent/history") {
             let output = try await makeClient().getChatHistory(.init())
@@ -148,6 +255,82 @@ final class FredClient {
         try await logged("DELETE", "/api/agent/tasks/\(id)") {
             let output = try await makeClient().deleteTask(.init(path: .init(id: id)))
             _ = try output.ok  // throws if not 2xx
+        }
+    }
+
+    /// GET /api/agent/tasks/:id/attachments/:attId — binary fetch. Returns
+    /// raw bytes so the caller can `UIImage(data:)` or whatever it needs.
+    func fetchAttachmentData(taskId: String, attachmentId: String) async throws -> Data {
+        try await logged("GET", "/api/agent/tasks/\(taskId)/attachments/\(attachmentId)") {
+            let url = config.hostURL.appendingPathComponent(
+                "/api/agent/tasks/\(taskId)/attachments/\(attachmentId)"
+            )
+            let (data, response) = try await session.data(from: url)
+            guard let http = response as? HTTPURLResponse else {
+                throw FredError.transport(underlying: URLError(.badServerResponse))
+            }
+            if http.statusCode == 404 { throw FredError.notFound }
+            if !(200...299).contains(http.statusCode) {
+                throw FredError.server(status: http.statusCode, message: String(data: data, encoding: .utf8))
+            }
+            return data
+        }
+    }
+
+    /// POST /api/agent/tasks/:id/attachments — multipart upload. Generator's
+    /// multipart support for binary bodies is awkward, so URLSession here
+    /// (same escape hatch as voiceTurn).
+    func uploadTaskAttachment(taskId: String, imageData: Data) async throws -> Components.Schemas.Task {
+        try await logged("POST", "/api/agent/tasks/\(taskId)/attachments") {
+            let url = config.hostURL.appendingPathComponent("/api/agent/tasks/\(taskId)/attachments")
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            let boundary = "fred-att-\(UUID().uuidString)"
+            request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+            var body = Data()
+            let crlf = "\r\n"
+            body.append("--\(boundary)\(crlf)".data(using: .utf8)!)
+            body.append("Content-Disposition: form-data; name=\"file\"; filename=\"upload.jpg\"\(crlf)".data(using: .utf8)!)
+            body.append("Content-Type: image/jpeg\(crlf)\(crlf)".data(using: .utf8)!)
+            body.append(imageData)
+            body.append("\(crlf)--\(boundary)--\(crlf)".data(using: .utf8)!)
+            request.httpBody = body
+            let (data, response) = try await session.data(for: request)
+            guard let http = response as? HTTPURLResponse else {
+                throw FredError.transport(underlying: URLError(.badServerResponse))
+            }
+            if http.statusCode == 401 { throw FredError.unauthorized }
+            if !(200...299).contains(http.statusCode) {
+                throw FredError.server(status: http.statusCode, message: String(data: data, encoding: .utf8))
+            }
+            // Response shape: { attachment: ..., task: <Task> } — decode the
+            // `task` subobject into the generated Task type. Plain JSONDecoder
+            // with a tolerant ISO8601 date strategy matches what
+            // TolerantISO8601Transcoder does for the typed client elsewhere.
+            struct Envelope: Decodable { let task: Components.Schemas.Task }
+            let decoder = JSONDecoder()
+            let withFractional = ISO8601DateFormatter()
+            withFractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            let plain = ISO8601DateFormatter()
+            plain.formatOptions = [.withInternetDateTime]
+            decoder.dateDecodingStrategy = .custom { dec in
+                let container = try dec.singleValueContainer()
+                let raw = try container.decode(String.self)
+                if let d = withFractional.date(from: raw) { return d }
+                if let d = plain.date(from: raw) { return d }
+                throw DecodingError.dataCorruptedError(in: container, debugDescription: "Invalid ISO8601 date: \(raw)")
+            }
+            let env = try decoder.decode(Envelope.self, from: data)
+            return env.task
+        }
+    }
+
+    func listRecentResearch(limit: Int = 5) async throws -> [Components.Schemas.ResearchItem] {
+        try await logged("GET", "/api/agent/research/recent") {
+            let output = try await makeClient().listRecentResearch(
+                .init(query: .init(limit: limit))
+            )
+            return try output.ok.body.json.items
         }
     }
 

@@ -32,10 +32,22 @@ final class AudioRecorder: NSObject {
             AVEncoderBitRateKey: 128_000,
         ]
         let rec = try AVAudioRecorder(url: url, settings: settings)
+        rec.isMeteringEnabled = true  // required so averagePower() reports live levels for the waveform
         rec.prepareToRecord()
         rec.record()
         self.recorder = rec
         self.currentURL = url
+    }
+
+    /// Current input level in [0, 1] where 0 is silence and 1 is clipping.
+    /// Derived from averagePower() which reports dB; we normalize by
+    /// clamping to a typical speech range (-60 dB … 0 dB).
+    func currentLevel() -> Float {
+        guard let rec = recorder, rec.isRecording else { return 0 }
+        rec.updateMeters()
+        let dB = rec.averagePower(forChannel: 0)
+        let normalized = (dB + 60) / 60  // -60 → 0, 0 → 1
+        return max(0, min(1, normalized))
     }
 
     /// Stops the recording and returns the file URL. Deactivates the audio

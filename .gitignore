@@ -12,6 +12,10 @@ build/
 Fred1210.xcodeproj
 Fred1210/Fred1210.entitlements
 Fred1210/Info.plist
+ShareExtension/Info.plist
+ShareExtension/Fred1210ShareExtension.entitlements
+Widget/Info.plist
+Widget/Fred1210Widget.entitlements
 
 # macOS
 .DS_Store

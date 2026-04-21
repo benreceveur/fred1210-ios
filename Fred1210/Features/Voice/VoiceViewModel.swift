@@ -15,6 +15,11 @@ final class VoiceViewModel: NSObject, ObservableObject {
     @Published var responseText: String = ""
     @Published var latency: LatencyBreakdown?
     @Published var displayError: FredDisplayError?
+    /// Rolling buffer of recent input levels (newest last), 0..1. Drives
+    /// the waveform view while recording.
+    @Published private(set) var audioLevels: [Float] = Array(repeating: 0, count: 40)
+
+    private var levelTimer: Timer?
 
     struct LatencyBreakdown: Equatable {
         let sttMs: Int
@@ -50,14 +55,36 @@ final class VoiceViewModel: NSObject, ObservableObject {
         do {
             try recorder.startRecording()
             state = .recording
+            startLevelTimer()
         } catch {
             displayError = FredDisplayError.from(error, endpoint: "Start recording", retry: nil)
             state = .idle
         }
     }
 
+    private func startLevelTimer() {
+        levelTimer?.invalidate()
+        levelTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self, self.state == .recording else { return }
+                let level = self.recorder.currentLevel()
+                var next = self.audioLevels
+                next.removeFirst()
+                next.append(level)
+                self.audioLevels = next
+            }
+        }
+    }
+
+    private func stopLevelTimer() {
+        levelTimer?.invalidate()
+        levelTimer = nil
+        audioLevels = Array(repeating: 0, count: audioLevels.count)
+    }
+
     func stopHoldToTalk() async {
         guard state == .recording else { return }
+        stopLevelTimer()
         guard let audioURL = recorder.stopRecording() else {
             state = .idle
             return

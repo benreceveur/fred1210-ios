@@ -24,7 +24,10 @@ DEVELOPMENT_TEAM = TEAM_ID_HERE
 FRED_DEFAULT_HOST = https:/$()/fred.example.ts.net
 
 // App bundle identifier. Must match the ASC app record for TestFlight.
-PRODUCT_BUNDLE_IDENTIFIER = com.example.fred1210
+// The share extension's bundle ID derives from this at build time
+// (see project.yml), so changing this one variable updates both.
+MAIN_APP_BUNDLE_ID = com.example.fred1210
+PRODUCT_BUNDLE_IDENTIFIER = $(MAIN_APP_BUNDLE_ID)
 
 // Exposed in the generated Info.plist as CFBundleURLName etc. if needed
 INFOPLIST_KEY_FredDefaultHost = $(FRED_DEFAULT_HOST)
