@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import PhotosUI
 
 struct TaskListView: View {
     @EnvironmentObject var clientHolder: ClientHolder
@@ -145,10 +146,17 @@ private struct TaskListContentView: View {
                 await viewModel.refresh()
             }
             .sheet(isPresented: $showingCreateSheet) {
-                CreateTaskSheet { title, description, priority in
-                    Task { await viewModel.create(title: title, description: description, priority: priority) }
+                CreateTaskSheet { title, description, priority, imageData in
+                    Task {
+                        await viewModel.create(
+                            title: title,
+                            description: description,
+                            priority: priority,
+                            attachment: imageData
+                        )
+                    }
                 }
-                .presentationDetents([.medium])
+                .presentationDetents([.medium, .large])
             }
             .safeAreaInset(edge: .top, spacing: 0) {
                 if let error = viewModel.displayError {
@@ -163,12 +171,17 @@ private struct TaskListContentView: View {
 
 private struct TaskRow: View {
     let task: Components.Schemas.Task
+    @EnvironmentObject var clientHolder: ClientHolder
 
     var body: some View {
         HStack(spacing: Theme.Spacing.md) {
             Circle()
                 .fill(priorityColor)
                 .frame(width: 8, height: 8)
+            if let firstAttachment = task.attachments?.first,
+               firstAttachment.mimeType.hasPrefix("image/") {
+                TaskAttachmentThumbnail(taskId: task.id, attachmentId: firstAttachment.id)
+            }
             VStack(alignment: .leading, spacing: 4) {
                 Text(task.title)
                     .font(.system(size: Theme.Font.md, weight: .semibold))
@@ -222,8 +235,12 @@ private struct CreateTaskSheet: View {
     @State private var title = ""
     @State private var description = ""
     @State private var priority: Components.Schemas.CreateTaskRequest.PriorityPayload = .medium
+    @State private var pickerItem: PhotosPickerItem?
+    @State private var pickedImageData: Data?
 
-    let onCreate: (String, String?, Components.Schemas.CreateTaskRequest.PriorityPayload) -> Void
+    /// Callback fires with the optional image bytes so the caller uploads
+    /// the attachment after the task is created.
+    let onCreate: (String, String?, Components.Schemas.CreateTaskRequest.PriorityPayload, Data?) -> Void
 
     var body: some View {
         NavigationStack {
@@ -244,6 +261,39 @@ private struct CreateTaskSheet: View {
                     }
                     .pickerStyle(.segmented)
                 }
+                Section("Attachment") {
+                    PhotosPicker(
+                        selection: $pickerItem,
+                        matching: .images,
+                        photoLibrary: .shared()
+                    ) {
+                        HStack {
+                            Label(pickedImageData == nil ? "Attach photo" : "Photo attached", systemImage: "paperclip")
+                            Spacer()
+                            if let data = pickedImageData, let ui = UIImage(data: data) {
+                                Image(uiImage: ui)
+                                    .resizable()
+                                    .scaledToFill()
+                                    .frame(width: 40, height: 40)
+                                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                            }
+                        }
+                    }
+                    .onChange(of: pickerItem) { newItem in
+                        guard let newItem else { return }
+                        Task {
+                            if let data = try? await newItem.loadTransferable(type: Data.self) {
+                                await MainActor.run { pickedImageData = data }
+                            }
+                        }
+                    }
+                    if pickedImageData != nil {
+                        Button("Remove photo", role: .destructive) {
+                            pickerItem = nil
+                            pickedImageData = nil
+                        }
+                    }
+                }
             }
             .navigationTitle("New Task")
             .navigationBarTitleDisplayMode(.inline)
@@ -253,11 +303,49 @@ private struct CreateTaskSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Create") {
-                        onCreate(title, description, priority)
+                        onCreate(title, description, priority, pickedImageData)
                         dismiss()
                     }
                     .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
+            }
+        }
+    }
+}
+
+/// Small square thumbnail for task attachments. Fetches the binary from
+/// `/api/agent/tasks/:id/attachments/:attId` and renders it inline on the
+/// task row so the user sees the image without opening a detail view.
+private struct TaskAttachmentThumbnail: View {
+    let taskId: String
+    let attachmentId: String
+    @EnvironmentObject var clientHolder: ClientHolder
+    @State private var image: UIImage?
+
+    var body: some View {
+        ZStack {
+            if let image {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 36, height: 36)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+            } else {
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(Theme.bgInput)
+                    .frame(width: 36, height: 36)
+                    .overlay(
+                        Image(systemName: "photo")
+                            .foregroundStyle(Theme.textMuted)
+                    )
+            }
+        }
+        .task {
+            guard image == nil else { return }
+            if let data = try? await clientHolder.client.fetchAttachmentData(
+                taskId: taskId, attachmentId: attachmentId
+            ), let ui = UIImage(data: data) {
+                image = ui
             }
         }
     }

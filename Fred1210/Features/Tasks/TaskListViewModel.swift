@@ -47,7 +47,12 @@ final class TaskListViewModel: ObservableObject {
         }
     }
 
-    func create(title: String, description: String?, priority: Components.Schemas.CreateTaskRequest.PriorityPayload) async {
+    func create(
+        title: String,
+        description: String?,
+        priority: Components.Schemas.CreateTaskRequest.PriorityPayload,
+        attachment: Data? = nil
+    ) async {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
@@ -59,9 +64,19 @@ final class TaskListViewModel: ObservableObject {
         )
 
         do {
-            let task = try await client.createTask(request)
+            var task = try await client.createTask(request)
+            // If the sheet supplied an image, upload it after creation so
+            // the task gets its id first, then we POST the binary to the
+            // attachments route. Best-effort — attachment failure keeps the
+            // task visible and surfaces the error separately.
+            if let attachment {
+                do {
+                    task = try await client.uploadTaskAttachment(taskId: task.id, imageData: attachment)
+                } catch {
+                    displayError = FredDisplayError.from(error, endpoint: "Upload attachment", retry: nil)
+                }
+            }
             tasks.insert(task, at: 0)
-            displayError = nil
         } catch {
             displayError = FredDisplayError.from(error, endpoint: "Create task", retry: nil)
         }

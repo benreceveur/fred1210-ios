@@ -596,7 +596,22 @@
           "tags": { "type": "array", "items": { "type": "string" } },
           "dueDate": { "type": "string", "format": "date-time" },
           "createdAt": { "type": "string", "format": "date-time" },
-          "updatedAt": { "type": "string", "format": "date-time" }
+          "updatedAt": { "type": "string", "format": "date-time" },
+          "attachments": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/TaskAttachment" }
+          }
+        }
+      },
+      "TaskAttachment": {
+        "type": "object",
+        "required": ["id", "mimeType", "sizeBytes", "createdAt"],
+        "properties": {
+          "id": { "type": "string" },
+          "mimeType": { "type": "string" },
+          "sizeBytes": { "type": "integer" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "filename": { "type": "string" }
         }
       },
       "TaskListResponse": {

@@ -258,6 +258,73 @@ final class FredClient {
         }
     }
 
+    /// GET /api/agent/tasks/:id/attachments/:attId — binary fetch. Returns
+    /// raw bytes so the caller can `UIImage(data:)` or whatever it needs.
+    func fetchAttachmentData(taskId: String, attachmentId: String) async throws -> Data {
+        try await logged("GET", "/api/agent/tasks/\(taskId)/attachments/\(attachmentId)") {
+            let url = config.hostURL.appendingPathComponent(
+                "/api/agent/tasks/\(taskId)/attachments/\(attachmentId)"
+            )
+            let (data, response) = try await session.data(from: url)
+            guard let http = response as? HTTPURLResponse else {
+                throw FredError.transport(underlying: URLError(.badServerResponse))
+            }
+            if http.statusCode == 404 { throw FredError.notFound }
+            if !(200...299).contains(http.statusCode) {
+                throw FredError.server(status: http.statusCode, message: String(data: data, encoding: .utf8))
+            }
+            return data
+        }
+    }
+
+    /// POST /api/agent/tasks/:id/attachments — multipart upload. Generator's
+    /// multipart support for binary bodies is awkward, so URLSession here
+    /// (same escape hatch as voiceTurn).
+    func uploadTaskAttachment(taskId: String, imageData: Data) async throws -> Components.Schemas.Task {
+        try await logged("POST", "/api/agent/tasks/\(taskId)/attachments") {
+            let url = config.hostURL.appendingPathComponent("/api/agent/tasks/\(taskId)/attachments")
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            let boundary = "fred-att-\(UUID().uuidString)"
+            request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+            var body = Data()
+            let crlf = "\r\n"
+            body.append("--\(boundary)\(crlf)".data(using: .utf8)!)
+            body.append("Content-Disposition: form-data; name=\"file\"; filename=\"upload.jpg\"\(crlf)".data(using: .utf8)!)
+            body.append("Content-Type: image/jpeg\(crlf)\(crlf)".data(using: .utf8)!)
+            body.append(imageData)
+            body.append("\(crlf)--\(boundary)--\(crlf)".data(using: .utf8)!)
+            request.httpBody = body
+            let (data, response) = try await session.data(for: request)
+            guard let http = response as? HTTPURLResponse else {
+                throw FredError.transport(underlying: URLError(.badServerResponse))
+            }
+            if http.statusCode == 401 { throw FredError.unauthorized }
+            if !(200...299).contains(http.statusCode) {
+                throw FredError.server(status: http.statusCode, message: String(data: data, encoding: .utf8))
+            }
+            // Response shape: { attachment: ..., task: <Task> } — decode the
+            // `task` subobject into the generated Task type. Plain JSONDecoder
+            // with a tolerant ISO8601 date strategy matches what
+            // TolerantISO8601Transcoder does for the typed client elsewhere.
+            struct Envelope: Decodable { let task: Components.Schemas.Task }
+            let decoder = JSONDecoder()
+            let withFractional = ISO8601DateFormatter()
+            withFractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            let plain = ISO8601DateFormatter()
+            plain.formatOptions = [.withInternetDateTime]
+            decoder.dateDecodingStrategy = .custom { dec in
+                let container = try dec.singleValueContainer()
+                let raw = try container.decode(String.self)
+                if let d = withFractional.date(from: raw) { return d }
+                if let d = plain.date(from: raw) { return d }
+                throw DecodingError.dataCorruptedError(in: container, debugDescription: "Invalid ISO8601 date: \(raw)")
+            }
+            let env = try decoder.decode(Envelope.self, from: data)
+            return env.task
+        }
+    }
+
     func listRecentResearch(limit: Int = 5) async throws -> [Components.Schemas.ResearchItem] {
         try await logged("GET", "/api/agent/research/recent") {
             let output = try await makeClient().listRecentResearch(
