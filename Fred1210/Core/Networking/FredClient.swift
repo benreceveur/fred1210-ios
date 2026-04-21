@@ -105,6 +105,8 @@ final class FredClient {
     enum ChatStreamEvent {
         case toolCall(name: String, argsPreview: String)
         case toolResult(name: String, ok: Bool, latencyMs: Int, errorPreview: String?)
+        case delta(text: String)
+        case context(source: String, note: String)
         case done(content: String, provider: String?, iterations: Int)
         case error(message: String)
     }
@@ -170,6 +172,13 @@ final class FredClient {
             let latency = (obj["latencyMs"] as? Int) ?? 0
             let errorPreview = obj["errorPreview"] as? String
             return .toolResult(name: name, ok: ok, latencyMs: latency, errorPreview: errorPreview)
+        case "delta":
+            let text = (obj["text"] as? String) ?? ""
+            return .delta(text: text)
+        case "context":
+            let source = (obj["source"] as? String) ?? "context"
+            let note = (obj["note"] as? String) ?? ""
+            return .context(source: source, note: note)
         case "done":
             let content = (obj["content"] as? String) ?? ""
             let provider = obj["provider"] as? String
@@ -373,6 +382,67 @@ final class FredClient {
                 )
             }
             return try JSONDecoder().decode(PushTestResult.self, from: data)
+        }
+    }
+
+    struct URLPreview: Decodable {
+        let url: String
+        let source: String
+        let title: String
+        let description: String?
+        let thumbnail: String?
+    }
+
+    /// POST /api/agent/resolve-url — fetches OG metadata (title, description,
+    /// thumbnail) for any URL so the Chat smart-paste preview can render a
+    /// card before the user sends. Matches the IG/TikTok resolver surface.
+    func resolveURL(_ url: String) async throws -> URLPreview {
+        try await logged("POST", "/api/agent/resolve-url") {
+            let endpoint = config.hostURL.appendingPathComponent("/api/agent/resolve-url")
+            var request = URLRequest(url: endpoint)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try JSONSerialization.data(withJSONObject: ["url": url], options: [])
+            let (data, response) = try await session.data(for: request)
+            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+                throw FredError.server(
+                    status: (response as? HTTPURLResponse)?.statusCode ?? -1,
+                    message: String(data: data, encoding: .utf8)
+                )
+            }
+            return try JSONDecoder().decode(URLPreview.self, from: data)
+        }
+    }
+
+    struct ProactiveItem: Decodable, Identifiable {
+        let kind: String
+        let title: String
+        let at: String
+        let ref: String?
+        var id: String { "\(kind)·\(at)·\(title.prefix(20))" }
+    }
+
+    /// GET /api/agent/proactive/since?ts=<iso> — what Fred did on its own
+    /// since the supplied timestamp. Powers the "while you were gone" banner.
+    func fetchProactiveSince(_ since: Date) async throws -> [ProactiveItem] {
+        try await logged("GET", "/api/agent/proactive/since") {
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            var comps = URLComponents(
+                url: config.hostURL.appendingPathComponent("/api/agent/proactive/since"),
+                resolvingAgainstBaseURL: false
+            )
+            comps?.queryItems = [URLQueryItem(name: "ts", value: formatter.string(from: since))]
+            guard let url = comps?.url else { throw FredError.transport(underlying: URLError(.badURL)) }
+            let (data, response) = try await session.data(from: url)
+            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+                throw FredError.server(
+                    status: (response as? HTTPURLResponse)?.statusCode ?? -1,
+                    message: String(data: data, encoding: .utf8)
+                )
+            }
+            struct Envelope: Decodable { let items: [ProactiveItem] }
+            return try JSONDecoder().decode(Envelope.self, from: data).items
         }
     }
 

@@ -72,12 +72,39 @@ struct DashboardSnapshot {
 final class DashboardViewModel: ObservableObject {
     @Published private(set) var snapshot = DashboardSnapshot.empty
     @Published private(set) var isLoading = false
+    @Published private(set) var whileGoneItems: [FredClient.ProactiveItem] = []
     @Published var displayError: FredDisplayError?
 
     private let client: FredClient
+    private let lastSeenKey = "fred1210.lastSeenProactiveTimestamp"
 
     init(client: FredClient) {
         self.client = client
+    }
+
+    /// Persist the moment the user has "seen" Fred's proactive activity so
+    /// the next open shows only what happened since. UserDefaults keeps it
+    /// across launches without adding a dependency on SecureStorage for a
+    /// non-sensitive value.
+    private var lastSeen: Date {
+        get {
+            UserDefaults.standard.object(forKey: lastSeenKey) as? Date
+                ?? Date(timeIntervalSinceNow: -6 * 60 * 60)
+        }
+        set { UserDefaults.standard.set(newValue, forKey: lastSeenKey) }
+    }
+
+    func refreshWhileGone() async {
+        do {
+            whileGoneItems = try await client.fetchProactiveSince(lastSeen)
+        } catch {
+            // Non-fatal — banner just stays empty.
+        }
+    }
+
+    func dismissWhileGone() {
+        lastSeen = Date()
+        whileGoneItems = []
     }
 
     /// Fetch dashboard, status, transport health, and recent research

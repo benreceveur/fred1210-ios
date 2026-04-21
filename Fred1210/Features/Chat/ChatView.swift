@@ -87,6 +87,12 @@ private struct ChatContentView: View {
                             ToolActivityStack(activities: viewModel.activeTools)
                                 .id("tool-activity")
                         }
+                        // Streaming assistant reply — rendered as a live
+                        // bubble that types itself out from the delta stream.
+                        if let streaming = viewModel.streamingAssistant, !streaming.isEmpty {
+                            StreamingAssistantBubble(text: streaming)
+                                .id("streaming-assistant")
+                        }
                     }
                 }
                 .padding(Theme.Spacing.lg)
@@ -105,6 +111,16 @@ private struct ChatContentView: View {
 
     @ViewBuilder
     private var inputBar: some View {
+        VStack(spacing: 0) {
+            // Smart paste preview — shown above the input when the draft
+            // contains a URL. Renders title, description, thumbnail so the
+            // user sees what Fred will see before sending.
+            if let preview = viewModel.pastePreview {
+                SmartPastePreview(preview: preview, onDismiss: { viewModel.pastePreview = nil })
+                    .padding(.horizontal, Theme.Spacing.lg)
+                    .padding(.top, Theme.Spacing.sm)
+            }
+
         HStack(spacing: Theme.Spacing.md) {
             TextField("Message", text: $viewModel.draft, axis: .vertical)
                 .textFieldStyle(.plain)
@@ -116,6 +132,9 @@ private struct ChatContentView: View {
                 .focused($inputFocused)
                 .submitLabel(.send)
                 .onSubmit { Task { await viewModel.send() } }
+                .onChange(of: viewModel.draft) { newValue in
+                    viewModel.debouncePasteResolve(for: newValue)
+                }
                 .toolbar {
                     ToolbarItemGroup(placement: .keyboard) {
                         Spacer()
@@ -143,6 +162,7 @@ private struct ChatContentView: View {
             .disabled(isSendDisabled)
         }
         .padding(Theme.Spacing.lg)
+        }
         .background(Theme.bgCard)
     }
 
@@ -333,6 +353,97 @@ private struct ToolActivityStack: View {
             Text("\(ms)ms")
                 .font(.system(size: Theme.Font.xs, weight: .semibold))
                 .foregroundStyle(Theme.textMuted)
+        }
+    }
+}
+
+/// Compact card showing the OG metadata Fred resolved for a URL the user
+/// pasted into the input. Shows what Fred will actually see before send.
+private struct SmartPastePreview: View {
+    let preview: FredClient.URLPreview
+    let onDismiss: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: Theme.Spacing.sm) {
+            if let thumbURL = preview.thumbnail, let url = URL(string: thumbURL) {
+                AsyncImage(url: url) { image in
+                    image
+                        .resizable()
+                        .scaledToFill()
+                } placeholder: {
+                    Rectangle().fill(Theme.bgInput)
+                }
+                .frame(width: 48, height: 48)
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+            } else {
+                Image(systemName: iconFor(source: preview.source))
+                    .font(.system(size: 24))
+                    .foregroundStyle(Theme.primary)
+                    .frame(width: 48, height: 48)
+                    .background(Theme.bgInput)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(preview.title)
+                    .font(.system(size: Theme.Font.sm, weight: .semibold))
+                    .foregroundStyle(Theme.textPrimary)
+                    .lineLimit(1)
+                if let desc = preview.description, !desc.isEmpty {
+                    Text(desc)
+                        .font(.system(size: Theme.Font.xs))
+                        .foregroundStyle(Theme.textMuted)
+                        .lineLimit(2)
+                }
+                Text(preview.source.uppercased())
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(Theme.textMuted)
+                    .tracking(0.5)
+            }
+            Spacer(minLength: 0)
+            Button(action: onDismiss) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(Theme.textMuted)
+                    .padding(6)
+                    .background(Theme.bgInput)
+                    .clipShape(Circle())
+            }
+        }
+        .padding(Theme.Spacing.sm)
+        .background(Theme.bgCard)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+    }
+
+    private func iconFor(source: String) -> String {
+        switch source {
+        case "tiktok": return "music.note"
+        case "instagram": return "camera"
+        default: return "link"
+        }
+    }
+}
+
+/// Live-updating assistant message rendered from the delta stream. Looks
+/// like a normal assistant bubble so the final `done` event can replace
+/// this view with a real `ChatGroupView` entry without a visual jump.
+private struct StreamingAssistantBubble: View {
+    let text: String
+
+    var body: some View {
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("FRED")
+                    .font(.system(size: Theme.Font.xs, weight: .semibold))
+                    .foregroundStyle(Theme.textMuted)
+                Text(text)
+                    .font(.system(size: Theme.Font.md))
+                    .foregroundStyle(Theme.textPrimary)
+                    .padding(Theme.Spacing.md)
+                    .background(Theme.bgCard)
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md, style: .continuous))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            Spacer(minLength: 40)
         }
     }
 }

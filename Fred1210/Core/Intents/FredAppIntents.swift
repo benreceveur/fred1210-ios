@@ -130,6 +130,71 @@ enum FredPriority: String, AppEnum {
     ]
 }
 
+/// Action-Button-friendly quick task capture. Single string parameter,
+/// no confirmation dialog — one press of the Action Button (mapped to
+/// this shortcut) prompts for dictation, drops the task on the board,
+/// and returns a confirmation.
+struct QuickTaskIntent: AppIntent {
+    static let title: LocalizedStringResource = "Quick Fred task"
+    static let description = IntentDescription(
+        "One-line task capture straight to Fred's board. Map to the Action Button for hands-free capture.",
+        categoryName: "Fred"
+    )
+    static let openAppWhenRun = false
+
+    @Parameter(
+        title: "Task",
+        description: "What's the task?",
+        requestValueDialog: IntentDialog("What's the task?")
+    )
+    var task: String
+
+    static var parameterSummary: some ParameterSummary {
+        Summary("Add \(\.$task) to Fred's task board")
+    }
+
+    func perform() async throws -> some ProvidesDialog {
+        let client = FredIntentClient()
+        let trimmed = task.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return .result(dialog: "Empty task — nothing added.")
+        }
+        _ = try await client.createTask(title: trimmed, priority: "medium")
+        return .result(dialog: "Added: \(trimmed)")
+    }
+}
+
+/// Summarize highlighted text via Fred. Registered so it shows up in
+/// Shortcuts / Siri. On iOS 18 it appears in the Share Sheet for any
+/// text selection via the App Intent system.
+struct SummarizeWithFredIntent: AppIntent {
+    static let title: LocalizedStringResource = "Summarize with Fred"
+    static let description = IntentDescription(
+        "Summarize text, articles, or messages via Fred. Works on any string — selected text, clipboard, share-sheet input.",
+        categoryName: "Fred"
+    )
+    static let openAppWhenRun = false
+
+    @Parameter(
+        title: "Text to summarize",
+        description: "Paste or select the text you want Fred to summarize.",
+        inputOptions: .init(multiline: true)
+    )
+    var text: String
+
+    static var parameterSummary: some ParameterSummary {
+        Summary("Summarize \(\.$text) with Fred")
+    }
+
+    func perform() async throws -> some ProvidesDialog & ReturnsValue<String> {
+        let client = FredIntentClient()
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let prompt = "Summarize this in 3-5 bullet points. Keep it tight.\n\n\(trimmed)"
+        let response = try await client.sendChat(prompt)
+        return .result(value: response, dialog: IntentDialog(stringLiteral: response))
+    }
+}
+
 // MARK: - Shortcuts gallery
 
 /// Curated Shortcuts suggestions that appear in the Shortcuts app gallery.
@@ -143,6 +208,25 @@ struct Fred1210AppShortcuts: AppShortcutsProvider {
             ],
             shortTitle: "Ask Fred",
             systemImageName: "bubble.left.and.bubble.right.fill"
+        )
+        AppShortcut(
+            intent: QuickTaskIntent(),
+            phrases: [
+                "Quick \(.applicationName) task",
+                "New \(.applicationName) task",
+                "Capture to \(.applicationName)",
+            ],
+            shortTitle: "Quick Fred task",
+            systemImageName: "bolt.circle.fill"
+        )
+        AppShortcut(
+            intent: SummarizeWithFredIntent(),
+            phrases: [
+                "Summarize with \(.applicationName)",
+                "\(.applicationName) summarize",
+            ],
+            shortTitle: "Summarize with Fred",
+            systemImageName: "text.justify"
         )
         AppShortcut(
             intent: CreateTaskViaVoiceIntent(),

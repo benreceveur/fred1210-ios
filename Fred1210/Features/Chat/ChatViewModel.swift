@@ -22,9 +22,20 @@ final class ChatViewModel: ObservableObject {
     @Published private(set) var isLoadingHistory = false
     @Published private(set) var isSending = false
     @Published private(set) var activeTools: [ToolActivity] = []
+    /// Partial assistant reply being typed out via delta events. Nil when
+    /// no turn is streaming; rendered as a live-updating bubble at the
+    /// bottom of the list until the `done` event flips it into `messages`.
+    @Published private(set) var streamingAssistant: String?
+    /// OG metadata for the URL in the current draft. Populated by
+    /// `debouncePasteResolve(for:)` when the user pastes a URL; cleared on
+    /// send or manual dismiss.
+    @Published var pastePreview: FredClient.URLPreview?
     @Published var displayError: FredDisplayError?
     @Published var draft: String = ""
     @Published var searchQuery: String = ""
+
+    private var pasteResolveTask: Task<Void, Never>?
+    private var lastResolvedURL: String?
 
     /// Filtered view of ``messages`` based on the current search query.
     /// Case-insensitive substring match on message content.
@@ -62,9 +73,11 @@ final class ChatViewModel: ObservableObject {
         draft = ""
         isSending = true
         activeTools = []
+        streamingAssistant = nil
         defer {
             isSending = false
             activeTools = []
+            streamingAssistant = nil
         }
 
         // Optimistic: append the user message immediately so the UI
@@ -91,6 +104,12 @@ final class ChatViewModel: ObservableObject {
                             ? .completed(latencyMs: latencyMs)
                             : .failed(latencyMs: latencyMs, errorPreview: errorPreview)
                     }
+                case .delta(let text):
+                    streamingAssistant = (streamingAssistant ?? "") + text
+                case .context:
+                    // Context events are informational (e.g. "pulled TikTok
+                    // metadata") — no UI surface yet, just skip.
+                    break
                 case .done(let content, _, _):
                     finalContent = content
                 case .error(let message):
@@ -129,5 +148,38 @@ final class ChatViewModel: ObservableObject {
 
     func clearError() {
         displayError = nil
+    }
+
+    /// Detects the first URL in the draft and fetches OG metadata after a
+    /// short debounce so typing/pasting doesn't spam /resolve-url.
+    func debouncePasteResolve(for text: String) {
+        let detected = Self.firstURL(in: text)
+        if detected == nil {
+            pastePreview = nil
+            lastResolvedURL = nil
+            pasteResolveTask?.cancel()
+            return
+        }
+        guard let url = detected else { return }
+        if url == lastResolvedURL { return }
+        pasteResolveTask?.cancel()
+        pasteResolveTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            guard let self, !Task.isCancelled else { return }
+            do {
+                let preview = try await self.client.resolveURL(url)
+                if Task.isCancelled { return }
+                self.pastePreview = preview
+                self.lastResolvedURL = url
+            } catch {
+                // Silent — smart paste is a nice-to-have, not a blocker.
+            }
+        }
+    }
+
+    private static func firstURL(in text: String) -> String? {
+        guard let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) else { return nil }
+        let matches = detector.matches(in: text, range: NSRange(text.startIndex..., in: text))
+        return matches.first?.url?.absoluteString
     }
 }

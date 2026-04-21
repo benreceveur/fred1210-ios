@@ -20,6 +20,12 @@ private struct DashboardContentView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: Theme.Spacing.md) {
+                    if !viewModel.whileGoneItems.isEmpty {
+                        WhileYouWereGoneBanner(
+                            items: viewModel.whileGoneItems,
+                            onDismiss: { viewModel.dismissWhileGone() }
+                        )
+                    }
                     greetingHeader
                     topStatsRow
                     teamCard
@@ -35,9 +41,13 @@ private struct DashboardContentView: View {
             .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbarBackground(Theme.bgCard, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
-            .refreshable { await viewModel.refresh() }
+            .refreshable {
+                await viewModel.refresh()
+                await viewModel.refreshWhileGone()
+            }
             .task {
                 await viewModel.refresh()
+                await viewModel.refreshWhileGone()
                 startAutoRefresh()
             }
             .onDisappear { refreshTask?.cancel() }
@@ -281,6 +291,65 @@ private struct DashboardContentView: View {
                 if Task.isCancelled { return }
                 await viewModel?.refresh()
             }
+        }
+    }
+}
+
+/// Soft banner shown at the top of the Dashboard summarizing things
+/// Fred did on his own since the user last opened the app. Swipe-left
+/// or the "×" dismisses and advances the lastSeen cursor.
+private struct WhileYouWereGoneBanner: View {
+    let items: [FredClient.ProactiveItem]
+    let onDismiss: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Image(systemName: "sparkles")
+                    .foregroundStyle(Theme.primary)
+                Text("While you were gone")
+                    .font(.system(size: Theme.Font.xs, weight: .semibold))
+                    .foregroundStyle(Theme.textMuted)
+                    .tracking(0.5)
+                    .textCase(.uppercase)
+                Spacer()
+                Button(action: onDismiss) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(Theme.textMuted)
+                        .padding(6)
+                        .background(Theme.bgInput)
+                        .clipShape(Circle())
+                }
+            }
+            ForEach(items.prefix(3)) { item in
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Image(systemName: icon(for: item.kind))
+                        .foregroundStyle(Theme.primary)
+                        .font(.system(size: 12))
+                    Text(item.title)
+                        .font(.system(size: Theme.Font.sm))
+                        .foregroundStyle(Theme.textPrimary)
+                        .lineLimit(1)
+                    Spacer()
+                }
+            }
+            if items.count > 3 {
+                Text("+ \(items.count - 3) more")
+                    .font(.system(size: Theme.Font.xs))
+                    .foregroundStyle(Theme.textMuted)
+            }
+        }
+        .padding(Theme.Spacing.md)
+        .background(Theme.bgCard)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+    }
+
+    private func icon(for kind: String) -> String {
+        switch kind {
+        case "task_done": return "checkmark.circle.fill"
+        case "research": return "doc.text.magnifyingglass"
+        default: return "circle.fill"
         }
     }
 }
