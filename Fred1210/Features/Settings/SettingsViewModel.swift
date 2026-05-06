@@ -9,8 +9,7 @@ final class SettingsViewModel: ObservableObject {
     /// Surfaced in the UI so users can see what the installed build
     /// shipped with — handy when diagnosing "app can't connect".
     let buildTimeDefault: String? = {
-        (Bundle.main.object(forInfoDictionaryKey: "FredDefaultHost") as? String)
-            .flatMap { $0.isEmpty ? nil : $0 }
+        FredConfig.normalizedHost(Bundle.main.object(forInfoDictionaryKey: "FredDefaultHost") as? String)
     }()
 
     let appVersion: String = {

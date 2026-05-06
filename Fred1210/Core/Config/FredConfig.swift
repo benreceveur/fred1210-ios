@@ -11,6 +11,7 @@ import KeychainAccess
 /// See Config/Local.xcconfig.example for the template.
 final class FredConfig: ObservableObject {
     static let service = "com.relayforgelabs.fred1210"
+    static let productionDefaultHost = "https://bobs-mac-mini.tail5a2996.ts.net"
     /// Shared access group so extensions (share, widget, Siri intent, watch)
     /// read the same host URL as the main app. Must match the
     /// `keychain-access-groups` entitlement declared in project.yml. Xcode
@@ -21,14 +22,13 @@ final class FredConfig: ObservableObject {
     private static let hostKey = "fred-host"
 
     /// Fallback when Config/Local.xcconfig hasn't been set up and the
-    /// user hasn't stored a host in Keychain yet. Deliberately a
-    /// non-resolvable placeholder so misconfiguration fails loud.
+    /// user hasn't stored a host in Keychain yet.
     static let defaultHost: String = {
         if let fromPlist = Bundle.main.object(forInfoDictionaryKey: "FredDefaultHost") as? String,
            !fromPlist.isEmpty {
-            return fromPlist
+            return normalizedHost(fromPlist)
         }
-        return "https://fred.example.ts.net"
+        return productionDefaultHost
     }()
 
     @Published private(set) var hostURL: URL
@@ -52,15 +52,43 @@ final class FredConfig: ObservableObject {
 
         let stored = try? self.keychain.get(Self.hostKey)
         let raw = stored?.isEmpty == false ? stored! : Self.defaultHost
-        self.hostURL = URL(string: raw) ?? URL(string: Self.defaultHost)!
+        let normalized = Self.normalizedHost(raw)
+        self.hostURL = URL(string: normalized)!
+        if normalized != raw {
+            try? self.keychain.set(normalized, key: Self.hostKey)
+        }
     }
 
     func setHost(_ urlString: String) throws {
-        guard let url = URL(string: urlString), url.scheme != nil, url.host != nil else {
+        let normalized = Self.normalizedHost(urlString, repairPlaceholders: false)
+        guard let url = URL(string: normalized), url.scheme != nil, url.host != nil else {
             throw FredConfigError.invalidURL
         }
-        try keychain.set(urlString, key: Self.hostKey)
+        try keychain.set(normalized, key: Self.hostKey)
         DispatchQueue.main.async { self.hostURL = url }
+    }
+
+    static func normalizedHost(_ raw: String?, repairPlaceholders: Bool = true) -> String {
+        let trimmed = (raw ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return productionDefaultHost }
+
+        guard let url = URL(string: trimmed),
+              let scheme = url.scheme?.lowercased(),
+              ["http", "https"].contains(scheme),
+              let host = url.host?.lowercased(),
+              !host.isEmpty else {
+            return repairPlaceholders ? productionDefaultHost : trimmed
+        }
+
+        if repairPlaceholders, isKnownBadHost(host) {
+            return productionDefaultHost
+        }
+
+        return trimmed
+    }
+
+    private static func isKnownBadHost(_ host: String) -> Bool {
+        host == "fred.example.ts.net" || host.hasSuffix(".example.ts.net") || host == "example.ts.net"
     }
 }
 

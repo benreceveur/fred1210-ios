@@ -21,7 +21,7 @@ DEVELOPMENT_TEAM = TEAM_ID_HERE
 // escape — Xcode evaluates $() to empty at build time, reassembling
 // the full URL. Without this, every build here shipped with a broken
 // host and every API call erred at the transport layer.
-FRED_DEFAULT_HOST = https:/$()/fred.example.ts.net
+FRED_DEFAULT_HOST = https:/$()/bobs-mac-mini.tail5a2996.ts.net
 
 // App bundle identifier. Must match the ASC app record for TestFlight.
 // The share extension's bundle ID derives from this at build time

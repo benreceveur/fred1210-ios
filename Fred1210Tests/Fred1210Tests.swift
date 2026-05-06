@@ -22,6 +22,21 @@ final class Fred1210Tests: XCTestCase {
         )
     }
 
+    func testFredConfigRepairsKnownBadHosts() throws {
+        XCTAssertEqual(
+            FredConfig.normalizedHost("https://fred.example.ts.net"),
+            FredConfig.productionDefaultHost
+        )
+        XCTAssertEqual(
+            FredConfig.normalizedHost("https:"),
+            FredConfig.productionDefaultHost
+        )
+        XCTAssertEqual(
+            FredConfig.normalizedHost("https://bobs-mac-mini.tail5a2996.ts.net"),
+            "https://bobs-mac-mini.tail5a2996.ts.net"
+        )
+    }
+
     @MainActor
     func testInboxKeepsLoadedSectionsWhenOneRequestIsCancelled() async throws {
         let client = MockInboxClient()

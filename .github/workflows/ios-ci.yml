@@ -78,7 +78,7 @@ jobs:
       APP_STORE_CONNECT_API_KEY_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY_KEY }}
       FASTLANE_TEAM_ID: ${{ secrets.FASTLANE_TEAM_ID }}
       FASTLANE_APP_IDENTIFIER: ${{ secrets.FASTLANE_APP_IDENTIFIER }}
-      FRED_DEFAULT_HOST: ${{ secrets.FRED_DEFAULT_HOST }}
+      FRED_DEFAULT_HOST: ${{ secrets.FRED_DEFAULT_HOST || 'https://bobs-mac-mini.tail5a2996.ts.net' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -112,7 +112,13 @@ jobs:
             sed -i '' "s|^MAIN_APP_BUNDLE_ID = .*|MAIN_APP_BUNDLE_ID = $FASTLANE_APP_IDENTIFIER|" Config/Local.xcconfig
           fi
           if [ -n "$FRED_DEFAULT_HOST" ]; then
-            sed -i '' "s|^FRED_DEFAULT_HOST = .*|FRED_DEFAULT_HOST = $FRED_DEFAULT_HOST|" Config/Local.xcconfig
+            SAFE_FRED_DEFAULT_HOST="$FRED_DEFAULT_HOST"
+            if [[ "$SAFE_FRED_DEFAULT_HOST" == https://* ]]; then
+              SAFE_FRED_DEFAULT_HOST="https:/\$()/${SAFE_FRED_DEFAULT_HOST#https://}"
+            elif [[ "$SAFE_FRED_DEFAULT_HOST" == http://* ]]; then
+              SAFE_FRED_DEFAULT_HOST="http:/\$()/${SAFE_FRED_DEFAULT_HOST#http://}"
+            fi
+            sed -i '' "s|^FRED_DEFAULT_HOST = .*|FRED_DEFAULT_HOST = $SAFE_FRED_DEFAULT_HOST|" Config/Local.xcconfig
           fi
 
       - name: Generate Xcode project
