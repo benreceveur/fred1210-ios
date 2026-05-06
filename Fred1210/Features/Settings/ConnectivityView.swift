@@ -14,6 +14,8 @@ struct ConnectivityView: View {
     var body: some View {
         List {
             Section("Transports") {
+                healthSummaryRow("Mac Mini", status: chatHealth == "unreachable" ? "Unreachable" : "Reachable", ok: chatHealth != "unreachable")
+                healthSummaryRow("Fred API", status: chatHealth, ok: chatHealth.hasPrefix("OK"))
                 if transports.isEmpty && !isLoading {
                     Text("No transport data yet — pull to refresh.")
                         .foregroundStyle(Theme.textMuted)
@@ -32,8 +34,6 @@ struct ConnectivityView: View {
                         }
                     }
                 }
-                LabeledContent("Chat pipeline", value: chatHealth)
-                    .foregroundStyle(Theme.textPrimary)
             }
             .listRowBackground(Theme.bgCard)
 
@@ -78,6 +78,20 @@ struct ConnectivityView: View {
         .toolbarBackground(.visible, for: .navigationBar)
         .refreshable { await load() }
         .task { await load() }
+    }
+
+    private func healthSummaryRow(_ title: String, status: String, ok: Bool) -> some View {
+        HStack {
+            Image(systemName: ok ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                .foregroundStyle(ok ? Theme.success : Theme.error)
+            Text(title)
+                .foregroundStyle(Theme.textPrimary)
+            Spacer()
+            Text(status)
+                .font(.system(size: Theme.Font.xs, weight: .semibold))
+                .foregroundStyle(ok ? Theme.success : Theme.warning)
+                .lineLimit(1)
+        }
     }
 
     private func load() async {

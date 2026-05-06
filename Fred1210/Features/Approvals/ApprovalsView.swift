@@ -10,6 +10,7 @@ struct ApprovalsView: View {
 
 private struct ApprovalsContentView: View {
     @StateObject private var viewModel: ApprovalsViewModel
+    @State private var selectedRecommendationId: String?
 
     init(client: FredClient) {
         _viewModel = StateObject(wrappedValue: ApprovalsViewModel(client: client))
@@ -54,6 +55,12 @@ private struct ApprovalsContentView: View {
                     ErrorBanner(error: error, onDismiss: viewModel.clearError)
                 }
             }
+            .sheet(item: Binding(
+                get: { selectedRecommendationId.map { RecommendationIdentifier(id: $0) } },
+                set: { selectedRecommendationId = $0?.id }
+            )) { wrapper in
+                RecommendationDetailSheet(recommendationId: wrapper.id)
+            }
         }
     }
 
@@ -84,11 +91,16 @@ private struct ApprovalsContentView: View {
                 }
             } else {
                 ForEach(viewModel.pending) { recommendation in
-                    RecommendationCard(
-                        recommendation: recommendation,
-                        onApprove: { Task { await viewModel.approve(recommendation) } },
-                        onDismiss: { Task { await viewModel.dismiss(recommendation) } }
-                    )
+                    Button {
+                        selectedRecommendationId = recommendation.id
+                    } label: {
+                        RecommendationCard(
+                            recommendation: recommendation,
+                            onApprove: { Task { await viewModel.approve(recommendation) } },
+                            onDismiss: { Task { await viewModel.dismiss(recommendation) } }
+                        )
+                    }
+                    .buttonStyle(.plain)
                 }
             }
         }
@@ -98,12 +110,17 @@ private struct ApprovalsContentView: View {
         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
             sectionTitle("Resolved", count: viewModel.resolved.count)
             ForEach(viewModel.resolved.prefix(5)) { recommendation in
-                RecommendationCard(
-                    recommendation: recommendation,
-                    compact: true,
-                    onApprove: {},
-                    onDismiss: {}
-                )
+                Button {
+                    selectedRecommendationId = recommendation.id
+                } label: {
+                    RecommendationCard(
+                        recommendation: recommendation,
+                        compact: true,
+                        onApprove: {},
+                        onDismiss: {}
+                    )
+                }
+                .buttonStyle(.plain)
             }
         }
     }
@@ -135,6 +152,10 @@ private struct ApprovalsContentView: View {
         guard let date else { return iso }
         return date.formatted(.relative(presentation: .numeric))
     }
+}
+
+private struct RecommendationIdentifier: Identifiable {
+    let id: String
 }
 
 private struct RecommendationCard: View {

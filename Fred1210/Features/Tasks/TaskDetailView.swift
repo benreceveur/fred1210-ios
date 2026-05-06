@@ -47,6 +47,11 @@ struct TaskDetailView: View {
                     }
                     .listRowBackground(Theme.bgCard)
 
+                    Section("Timeline") {
+                        TaskTimelineView(task: task)
+                    }
+                    .listRowBackground(Theme.bgCard)
+
                     // GitHub deep link when this task is mirrored from an
                     // upstream issue (external:<owner>/<repo>#<n> tag).
                     if let ghUrl = githubUrl(from: task.tags) {

@@ -37,6 +37,9 @@ final class ChatViewModel: ObservableObject {
     }
 
     private let client: FredClient
+#if canImport(ActivityKit)
+    private var liveActivityController: Any?
+#endif
 
     init(client: FredClient) {
         self.client = client
@@ -79,6 +82,13 @@ final class ChatViewModel: ObservableObject {
         messages.append(userMessage)
 
         do {
+#if canImport(ActivityKit)
+            if #available(iOS 16.2, *) {
+                let controller = LiveActivityController()
+                liveActivityController = controller
+                controller.start(prompt: text)
+            }
+#endif
             var finalContent: String?
             for try await event in client.sendChatMessageStreaming(text) {
                 switch event {
@@ -87,6 +97,16 @@ final class ChatViewModel: ObservableObject {
                     activeTools.append(ToolActivity(
                         name: name, argsPreview: argsPreview, state: .running
                     ))
+#if canImport(ActivityKit)
+                    if #available(iOS 16.2, *) {
+                        await (liveActivityController as? LiveActivityController)?.update(
+                            phase: turnPhase,
+                            currentTool: name,
+                            toolCount: activeTools.count,
+                            startedAt: turnStartedAt
+                        )
+                    }
+#endif
                 case .toolResult(let name, let ok, let latencyMs, let errorPreview):
                     turnPhase = ok ? "Finished \(name)" : "\(name) needs attention"
                     // Mark the most-recent running invocation of this tool as
@@ -99,6 +119,16 @@ final class ChatViewModel: ObservableObject {
                             ? .completed(latencyMs: latencyMs)
                             : .failed(latencyMs: latencyMs, errorPreview: errorPreview)
                     }
+#if canImport(ActivityKit)
+                    if #available(iOS 16.2, *) {
+                        await (liveActivityController as? LiveActivityController)?.update(
+                            phase: turnPhase,
+                            currentTool: name,
+                            toolCount: activeTools.count,
+                            startedAt: turnStartedAt
+                        )
+                    }
+#endif
                 case .done(let content, _, _):
                     turnPhase = "Composing answer"
                     finalContent = content
@@ -111,8 +141,20 @@ final class ChatViewModel: ObservableObject {
                 content: finalContent ?? ""
             )
             messages.append(assistant)
+#if canImport(ActivityKit)
+            if #available(iOS 16.2, *) {
+                await (liveActivityController as? LiveActivityController)?.end(summary: "Fred finished")
+                liveActivityController = nil
+            }
+#endif
             displayError = nil
         } catch {
+#if canImport(ActivityKit)
+            if #available(iOS 16.2, *) {
+                await (liveActivityController as? LiveActivityController)?.end(summary: "Fred needs attention")
+                liveActivityController = nil
+            }
+#endif
             displayError = FredDisplayError.from(
                 error, endpoint: "Send message",
                 retry: { [weak self] in

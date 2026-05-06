@@ -17,6 +17,30 @@ import SwiftUI
 struct Fred1210WidgetBundle: WidgetBundle {
     var body: some Widget {
         TasksWidget()
+        NeedsBobWidget()
+        if #available(iOSApplicationExtension 16.2, *) {
+            FredTurnLiveActivityWidget()
+        }
+    }
+}
+
+struct NeedsBobWidget: Widget {
+    let kind = "com.relayforgelabs.fred1210.widget.needs-bob"
+
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: kind, provider: TasksProvider()) { entry in
+            if #available(iOS 17.0, *) {
+                NeedsBobWidgetView(entry: entry)
+                    .containerBackground(for: .widget) { Color.black }
+            } else {
+                NeedsBobWidgetView(entry: entry)
+                    .padding()
+                    .background(Color.black)
+            }
+        }
+        .configurationDisplayName("Fred Needs Bob")
+        .description("Approvals, urgent tasks, and review work.")
+        .supportedFamilies([.systemSmall, .systemMedium])
     }
 }
 

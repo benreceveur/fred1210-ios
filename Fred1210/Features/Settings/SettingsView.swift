@@ -97,6 +97,11 @@ struct SettingsView: View {
 
                 Section {
                     NavigationLink {
+                        DashboardView()
+                    } label: {
+                        Label("Dashboard", systemImage: "chart.bar")
+                    }
+                    NavigationLink {
                         MemoryView()
                     } label: {
                         Label("Memory", systemImage: "brain")
@@ -104,7 +109,7 @@ struct SettingsView: View {
                     NavigationLink {
                         ConnectivityView()
                     } label: {
-                        Label("Connectivity", systemImage: "antenna.radiowaves.left.and.right")
+                        Label("Health console", systemImage: "waveform.path.ecg")
                     }
                     NavigationLink {
                         DiagnosticsView()

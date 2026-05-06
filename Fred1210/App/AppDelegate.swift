@@ -44,13 +44,18 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
     }
 
     // Tap-to-open: iOS later we'll route to a specific tab based on
-    // notification.category (digest → Chat, task → Tasks, etc.). For
-    // Phase 2 just open the app.
+    // notification data. Server pushes can include keys such as
+    // `taskId`, `recommendationId`, `researchId`, `screen`, or `kind`.
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
+        NotificationCenter.default.post(
+            name: .fredRouteRequested,
+            object: nil,
+            userInfo: response.notification.request.content.userInfo
+        )
         completionHandler()
     }
 }

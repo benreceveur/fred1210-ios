@@ -115,6 +115,29 @@ final class VoiceViewModel: NSObject, ObservableObject {
         }
     }
 
+    func runQuickCommand(_ command: String) async {
+        guard state == .idle else { return }
+        transcript = command
+        responseText = ""
+        latency = nil
+        state = .processing
+        do {
+            let started = Date()
+            let response = try await client.sendChatMessage(command)
+            responseText = response.response
+            latency = LatencyBreakdown(
+                sttMs: 0,
+                pipelineMs: Int(Date().timeIntervalSince(started) * 1000),
+                ttsMs: 0,
+                totalMs: Int(Date().timeIntervalSince(started) * 1000)
+            )
+            displayError = nil
+        } catch {
+            displayError = FredDisplayError.from(error, endpoint: "Voice command", retry: nil)
+        }
+        state = .idle
+    }
+
     func clearError() { displayError = nil }
 
     private func playResponse(_ data: Data, mimeType: String) async {
