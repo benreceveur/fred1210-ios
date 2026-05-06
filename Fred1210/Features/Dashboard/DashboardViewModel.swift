@@ -60,6 +60,7 @@ struct DashboardSnapshot {
     var automations = Automations(total: 0, enabled: 0)
     var calendar = Calendar(configured: false, count: 0, nextSummary: nil, nextStart: nil)
     var recentResearch: [ResearchItem] = []
+    var recentTasks: [Components.Schemas.Task] = []
     var upstreamMonitors: Int = 0
     var transports: [Components.Schemas.TransportHealth] = []
     var nemoPlannerSuccessRate: Double?
@@ -146,6 +147,7 @@ final class DashboardViewModel: ObservableObject {
                 overdue: overdue,
                 byStatus: byStatus
             )
+            snap.recentTasks = items.sorted { $0.updatedAt > $1.updatedAt }
         }
 
         if let team = dashboard.team, team.error == nil {

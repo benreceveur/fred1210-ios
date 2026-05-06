@@ -22,6 +22,8 @@ final class ChatViewModel: ObservableObject {
     @Published private(set) var isLoadingHistory = false
     @Published private(set) var isSending = false
     @Published private(set) var activeTools: [ToolActivity] = []
+    @Published private(set) var turnStartedAt: Date?
+    @Published private(set) var turnPhase = "Waiting"
     @Published var displayError: FredDisplayError?
     @Published var draft: String = ""
     @Published var searchQuery: String = ""
@@ -62,9 +64,13 @@ final class ChatViewModel: ObservableObject {
         draft = ""
         isSending = true
         activeTools = []
+        turnStartedAt = Date()
+        turnPhase = "Planning"
         defer {
             isSending = false
             activeTools = []
+            turnStartedAt = nil
+            turnPhase = "Waiting"
         }
 
         // Optimistic: append the user message immediately so the UI
@@ -77,10 +83,12 @@ final class ChatViewModel: ObservableObject {
             for try await event in client.sendChatMessageStreaming(text) {
                 switch event {
                 case .toolCall(let name, let argsPreview):
+                    turnPhase = "Using \(name)"
                     activeTools.append(ToolActivity(
                         name: name, argsPreview: argsPreview, state: .running
                     ))
                 case .toolResult(let name, let ok, let latencyMs, let errorPreview):
+                    turnPhase = ok ? "Finished \(name)" : "\(name) needs attention"
                     // Mark the most-recent running invocation of this tool as
                     // done. We walk backwards because the pipeline can queue
                     // the same tool twice in one turn.
@@ -92,6 +100,7 @@ final class ChatViewModel: ObservableObject {
                             : .failed(latencyMs: latencyMs, errorPreview: errorPreview)
                     }
                 case .done(let content, _, _):
+                    turnPhase = "Composing answer"
                     finalContent = content
                 case .error(let message):
                     throw FredError.server(status: 500, message: message)

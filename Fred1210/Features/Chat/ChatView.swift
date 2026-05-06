@@ -19,6 +19,13 @@ private struct ChatContentView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
+                if viewModel.isSending {
+                    TurnProgressBanner(
+                        phase: viewModel.turnPhase,
+                        toolCount: viewModel.activeTools.count,
+                        startedAt: viewModel.turnStartedAt
+                    )
+                }
                 messagesList
                 Divider().background(Theme.border)
                 inputBar
@@ -179,6 +186,42 @@ private struct ChatContentView: View {
             groups.append(Group(role: role, messages: current))
         }
         return groups
+    }
+}
+
+private struct TurnProgressBanner: View {
+    let phase: String
+    let toolCount: Int
+    let startedAt: Date?
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            HStack(spacing: Theme.Spacing.sm) {
+                ProgressView()
+                    .tint(Theme.primary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(phase)
+                        .font(.system(size: Theme.Font.sm, weight: .semibold))
+                        .foregroundStyle(Theme.textPrimary)
+                        .lineLimit(1)
+                    Text("\(toolCount) tool\(toolCount == 1 ? "" : "s") used\(elapsedText(now: context.date))")
+                        .font(.system(size: Theme.Font.xs))
+                        .foregroundStyle(Theme.textMuted)
+                }
+                Spacer()
+                Image(systemName: "livephoto")
+                    .foregroundStyle(Theme.primary)
+            }
+            .padding(.horizontal, Theme.Spacing.lg)
+            .padding(.vertical, Theme.Spacing.sm)
+            .background(Theme.bgInput)
+        }
+    }
+
+    private func elapsedText(now: Date) -> String {
+        guard let startedAt else { return "" }
+        let seconds = max(0, Int(now.timeIntervalSince(startedAt)))
+        return " · \(seconds)s"
     }
 }
 

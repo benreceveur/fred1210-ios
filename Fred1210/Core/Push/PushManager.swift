@@ -33,11 +33,54 @@ final class PushManager: ObservableObject {
         var urgentTasks: Bool
         var researchFindings: Bool
         var transportAlerts: Bool
+        var needsApproval: Bool
+        var security: Bool
+        var taskCompleted: Bool
+        var fredBlocked: Bool
+        var systemHealth: Bool
 
         static let allOn = ChannelPreferences(
             digest: true, urgentTasks: true,
-            researchFindings: true, transportAlerts: true
+            researchFindings: true, transportAlerts: true,
+            needsApproval: true, security: true,
+            taskCompleted: true, fredBlocked: true,
+            systemHealth: true
         )
+
+        init(
+            digest: Bool,
+            urgentTasks: Bool,
+            researchFindings: Bool,
+            transportAlerts: Bool,
+            needsApproval: Bool,
+            security: Bool,
+            taskCompleted: Bool,
+            fredBlocked: Bool,
+            systemHealth: Bool
+        ) {
+            self.digest = digest
+            self.urgentTasks = urgentTasks
+            self.researchFindings = researchFindings
+            self.transportAlerts = transportAlerts
+            self.needsApproval = needsApproval
+            self.security = security
+            self.taskCompleted = taskCompleted
+            self.fredBlocked = fredBlocked
+            self.systemHealth = systemHealth
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            digest = try container.decodeIfPresent(Bool.self, forKey: .digest) ?? true
+            urgentTasks = try container.decodeIfPresent(Bool.self, forKey: .urgentTasks) ?? true
+            researchFindings = try container.decodeIfPresent(Bool.self, forKey: .researchFindings) ?? true
+            transportAlerts = try container.decodeIfPresent(Bool.self, forKey: .transportAlerts) ?? true
+            needsApproval = try container.decodeIfPresent(Bool.self, forKey: .needsApproval) ?? true
+            security = try container.decodeIfPresent(Bool.self, forKey: .security) ?? true
+            taskCompleted = try container.decodeIfPresent(Bool.self, forKey: .taskCompleted) ?? true
+            fredBlocked = try container.decodeIfPresent(Bool.self, forKey: .fredBlocked) ?? true
+            systemHealth = try container.decodeIfPresent(Bool.self, forKey: .systemHealth) ?? true
+        }
     }
 
     @Published private(set) var authState: AuthState = .notDetermined
