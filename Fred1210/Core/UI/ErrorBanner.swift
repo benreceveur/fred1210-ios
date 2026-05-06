@@ -78,7 +78,7 @@ struct ErrorBanner: View {
             error: FredDisplayError(
                 endpoint: "Dashboard",
                 primaryMessage: "Server error",
-                detailMessage: "The request timed out after 15 seconds. Check Tailscale is connected.",
+                detailMessage: "The request timed out after 120 seconds. Check Tailscale is connected.",
                 httpStatus: 504,
                 retry: {}
             )
