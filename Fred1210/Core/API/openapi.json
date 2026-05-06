@@ -102,6 +102,14 @@
         "summary": "Get aggregated dashboard state",
         "description": "Subsystems that fail are returned with an `error: 'unavailable'` field so the client can render partially. Always returns 200 unless the request itself is invalid.",
         "operationId": "getDashboard",
+        "parameters": [
+          {
+            "name": "compact",
+            "in": "query",
+            "description": "Return compact task items for mobile clients while preserving full counts.",
+            "schema": { "type": "boolean" }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Raw dashboard aggregate",
@@ -132,6 +140,26 @@
         "tags": ["tasks"],
         "summary": "List all tasks",
         "operationId": "listTasks",
+        "parameters": [
+          {
+            "name": "compact",
+            "in": "query",
+            "description": "Return active tasks plus recent completed tasks with truncated descriptions.",
+            "schema": { "type": "boolean" }
+          },
+          {
+            "name": "doneLimit",
+            "in": "query",
+            "description": "Number of completed tasks to include when compact mode is enabled.",
+            "schema": { "type": "integer", "minimum": 1, "default": 25 }
+          },
+          {
+            "name": "descriptionLimit",
+            "in": "query",
+            "description": "Maximum task description length when compact mode is enabled.",
+            "schema": { "type": "integer", "minimum": 1, "default": 500 }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Task list with count",
