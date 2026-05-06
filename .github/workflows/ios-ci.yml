@@ -10,17 +10,17 @@ on:
 jobs:
   test:
     name: Build + Test
-    runs-on: macos-15
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
 
-      # Pick the newest installed Xcode 16 that ships an iOS 18 simulator
-      # runtime. /Applications/Xcode_16.app (no patch suffix) does not
-      # bundle an iOS 18 runtime on macos-15 runners, so `iPhone 16`
-      # destinations fail to resolve.
-      - name: Select latest installed Xcode 16.x
+      # App Store Connect requires iOS apps to be built with the iOS 26 SDK
+      # or later. Pin to 26.4.x because the hosted runner currently exposes
+      # an iOS 26.4 simulator runtime while newer 26.5 installs can lack the
+      # matching platform component.
+      - name: Select installed Xcode 26.4.x
         run: |
-          XCODE=$(ls -d /Applications/Xcode_16.*.app 2>/dev/null | sort -V | tail -1)
+          XCODE=$(ls -d /Applications/Xcode_26.4*.app 2>/dev/null | sort -V | tail -1)
           if [ -z "$XCODE" ]; then
             XCODE=/Applications/Xcode.app
           fi
@@ -41,12 +41,12 @@ jobs:
       - name: Generate Xcode project
         run: xcodegen generate
 
-      # macos-15 runners freshly booted with Xcode 16.4 occasionally
-      # ship the iOS 18 runtime without any pre-created simulator devices,
+      # Hosted macOS runners can ship the current iOS runtime without every
+      # simulator device pre-created,
       # which makes `-destination "name=iPhone 16"` fail with "Unable to
       # find a device matching the provided destination specifier".
-      # Create an iPhone 16 simulator on the latest installed iOS runtime
-      # if one doesn't already exist.
+      # Create an iPhone 16 simulator on the latest installed iOS runtime if
+      # one doesn't already exist.
       - name: Ensure iPhone 16 simulator exists
         run: |
           if xcrun simctl list devices available | grep -q "iPhone 16 ("; then
@@ -69,7 +69,7 @@ jobs:
 
   beta:
     name: TestFlight Upload
-    runs-on: macos-15
+    runs-on: macos-26
     needs: test
     if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch'
     env:
@@ -82,13 +82,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Pick the newest installed Xcode 16 that ships an iOS 18 simulator
-      # runtime. /Applications/Xcode_16.app (no patch suffix) does not
-      # bundle an iOS 18 runtime on macos-15 runners, so `iPhone 16`
-      # destinations fail to resolve.
-      - name: Select latest installed Xcode 16.x
+      # App Store Connect rejects new iOS uploads built with the iOS 18 SDK.
+      # Use the macOS 26 image and the installed Xcode 26.4.x toolchain.
+      - name: Select installed Xcode 26.4.x
         run: |
-          XCODE=$(ls -d /Applications/Xcode_16.*.app 2>/dev/null | sort -V | tail -1)
+          XCODE=$(ls -d /Applications/Xcode_26.4*.app 2>/dev/null | sort -V | tail -1)
           if [ -z "$XCODE" ]; then
             XCODE=/Applications/Xcode.app
           fi

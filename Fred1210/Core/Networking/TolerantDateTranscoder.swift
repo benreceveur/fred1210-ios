@@ -46,23 +46,27 @@ private struct SingleValueDecodingContainerStub: SingleValueDecodingContainer {
     var codingPath: [CodingKey] { [] }
     func decodeNil() -> Bool { true }
     func decode<T: Decodable>(_ type: T.Type) throws -> T {
+        try unsupported(type)
+    }
+
+    private func unsupported<T>(_ type: T.Type) throws -> T {
         throw DecodingError.valueNotFound(
             type,
             .init(codingPath: [], debugDescription: "stub container")
         )
     }
-    func decode(_ type: Bool.Type) throws -> Bool { try decode(Bool.self as Bool.Type) }
-    func decode(_ type: String.Type) throws -> String { try decode(String.self as String.Type) }
-    func decode(_ type: Double.Type) throws -> Double { try decode(Double.self as Double.Type) }
-    func decode(_ type: Float.Type) throws -> Float { try decode(Float.self as Float.Type) }
-    func decode(_ type: Int.Type) throws -> Int { try decode(Int.self as Int.Type) }
-    func decode(_ type: Int8.Type) throws -> Int8 { try decode(Int8.self as Int8.Type) }
-    func decode(_ type: Int16.Type) throws -> Int16 { try decode(Int16.self as Int16.Type) }
-    func decode(_ type: Int32.Type) throws -> Int32 { try decode(Int32.self as Int32.Type) }
-    func decode(_ type: Int64.Type) throws -> Int64 { try decode(Int64.self as Int64.Type) }
-    func decode(_ type: UInt.Type) throws -> UInt { try decode(UInt.self as UInt.Type) }
-    func decode(_ type: UInt8.Type) throws -> UInt8 { try decode(UInt8.self as UInt8.Type) }
-    func decode(_ type: UInt16.Type) throws -> UInt16 { try decode(UInt16.self as UInt16.Type) }
-    func decode(_ type: UInt32.Type) throws -> UInt32 { try decode(UInt32.self as UInt32.Type) }
-    func decode(_ type: UInt64.Type) throws -> UInt64 { try decode(UInt64.self as UInt64.Type) }
+    func decode(_ type: Bool.Type) throws -> Bool { try unsupported(type) }
+    func decode(_ type: String.Type) throws -> String { try unsupported(type) }
+    func decode(_ type: Double.Type) throws -> Double { try unsupported(type) }
+    func decode(_ type: Float.Type) throws -> Float { try unsupported(type) }
+    func decode(_ type: Int.Type) throws -> Int { try unsupported(type) }
+    func decode(_ type: Int8.Type) throws -> Int8 { try unsupported(type) }
+    func decode(_ type: Int16.Type) throws -> Int16 { try unsupported(type) }
+    func decode(_ type: Int32.Type) throws -> Int32 { try unsupported(type) }
+    func decode(_ type: Int64.Type) throws -> Int64 { try unsupported(type) }
+    func decode(_ type: UInt.Type) throws -> UInt { try unsupported(type) }
+    func decode(_ type: UInt8.Type) throws -> UInt8 { try unsupported(type) }
+    func decode(_ type: UInt16.Type) throws -> UInt16 { try unsupported(type) }
+    func decode(_ type: UInt32.Type) throws -> UInt32 { try unsupported(type) }
+    func decode(_ type: UInt64.Type) throws -> UInt64 { try unsupported(type) }
 }
