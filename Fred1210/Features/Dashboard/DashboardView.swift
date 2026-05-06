@@ -21,6 +21,7 @@ private struct DashboardContentView: View {
             ScrollView {
                 VStack(spacing: Theme.Spacing.md) {
                     greetingHeader
+                    actionCenterCard
                     topStatsRow
                     teamCard
                     secondaryStatsRow
@@ -82,6 +83,127 @@ private struct DashboardContentView: View {
     }
 
     // MARK: - Top stats row — Today + Tasks
+
+    private var actionCenterCard: some View {
+        Card {
+            VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+                HStack {
+                    Image(systemName: "rectangle.3.group.bubble.left")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(Theme.primary)
+                    Text("Action center")
+                        .font(.system(size: Theme.Font.xs, weight: .semibold))
+                        .foregroundStyle(Theme.textMuted)
+                        .tracking(0.5)
+                        .textCase(.uppercase)
+                    Spacer()
+                    Text("\(needsBob.count + fredWorking.count + healthIssues.count)")
+                        .font(.system(size: Theme.Font.xs, weight: .bold))
+                        .foregroundStyle(Theme.textSecondary)
+                }
+
+                actionLane(
+                    title: "Needs Bob",
+                    icon: "person.crop.circle.badge.exclamationmark",
+                    color: Theme.warning,
+                    items: needsBob.map { $0.title },
+                    empty: "No approvals waiting"
+                )
+                actionLane(
+                    title: "Fred Working",
+                    icon: "bolt.horizontal.circle",
+                    color: Theme.primary,
+                    items: fredWorking.map { $0.title },
+                    empty: "No active Fred tasks"
+                )
+                actionLane(
+                    title: "Health",
+                    icon: "waveform.path.ecg",
+                    color: healthIssues.isEmpty ? Theme.success : Theme.error,
+                    items: healthIssues,
+                    empty: "All transports healthy"
+                )
+                actionLane(
+                    title: "Recently Done",
+                    icon: "checkmark.seal",
+                    color: Theme.success,
+                    items: recentlyDone.map { $0.title },
+                    empty: "Nothing completed recently"
+                )
+            }
+        }
+    }
+
+    private var needsBob: [Components.Schemas.Task] {
+        viewModel.snapshot.recentTasks
+            .filter { $0.status == .review || $0.priority == .urgent }
+            .prefix(3)
+            .map { $0 }
+    }
+
+    private var fredWorking: [Components.Schemas.Task] {
+        viewModel.snapshot.recentTasks
+            .filter {
+                $0.status == .inProgress
+                    && (($0.assignee ?? "").lowercased().contains("fred") || ($0.assignee ?? "").isEmpty)
+            }
+            .prefix(3)
+            .map { $0 }
+    }
+
+    private var recentlyDone: [Components.Schemas.Task] {
+        viewModel.snapshot.recentTasks
+            .filter { $0.status == .done }
+            .prefix(3)
+            .map { $0 }
+    }
+
+    private var healthIssues: [String] {
+        viewModel.snapshot.transports
+            .filter { $0.degraded }
+            .prefix(3)
+            .map { "\($0.transport.rawValue.capitalized) degraded" }
+    }
+
+    private func actionLane(
+        title: String,
+        icon: String,
+        color: Color,
+        items: [String],
+        empty: String
+    ) -> some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+            HStack(spacing: Theme.Spacing.sm) {
+                Image(systemName: icon)
+                    .foregroundStyle(color)
+                    .frame(width: 18)
+                Text(title)
+                    .font(.system(size: Theme.Font.sm, weight: .semibold))
+                    .foregroundStyle(Theme.textPrimary)
+                Spacer()
+                Text(items.isEmpty ? "0" : "\(items.count)")
+                    .font(.system(size: Theme.Font.xs, weight: .bold))
+                    .foregroundStyle(items.isEmpty ? Theme.textMuted : color)
+            }
+            if items.isEmpty {
+                Text(empty)
+                    .font(.system(size: Theme.Font.xs))
+                    .foregroundStyle(Theme.textMuted)
+                    .padding(.leading, 26)
+            } else {
+                ForEach(items, id: \.self) { item in
+                    Text(item)
+                        .font(.system(size: Theme.Font.xs))
+                        .foregroundStyle(Theme.textSecondary)
+                        .lineLimit(1)
+                        .padding(.leading, 26)
+                }
+            }
+        }
+        .padding(Theme.Spacing.sm)
+        .background(Theme.bgInput.opacity(0.55))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm, style: .continuous))
+    }
 
     private var topStatsRow: some View {
         HStack(spacing: Theme.Spacing.md) {

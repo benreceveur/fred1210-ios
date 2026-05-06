@@ -261,6 +261,43 @@ final class FredClient {
         }
     }
 
+    func createTaskRaw(_ payload: [String: String]) async throws {
+        try await logged("POST", "/api/agent/tasks") {
+            let url = config.hostURL.appendingPathComponent("/api/agent/tasks")
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try JSONSerialization.data(withJSONObject: payload, options: [])
+            let (data, response) = try await session.data(for: request)
+            guard let http = response as? HTTPURLResponse else {
+                throw FredError.transport(underlying: URLError(.badServerResponse))
+            }
+            if http.statusCode == 401 { throw FredError.unauthorized }
+            if !(200...299).contains(http.statusCode) {
+                throw FredError.server(status: http.statusCode, message: String(data: data, encoding: .utf8))
+            }
+        }
+    }
+
+    func updateTaskRaw(id: String, payload: [String: String]) async throws {
+        try await logged("PATCH", "/api/agent/tasks/\(id)") {
+            let url = config.hostURL.appendingPathComponent("/api/agent/tasks/\(id)")
+            var request = URLRequest(url: url)
+            request.httpMethod = "PATCH"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try JSONSerialization.data(withJSONObject: payload, options: [])
+            let (data, response) = try await session.data(for: request)
+            guard let http = response as? HTTPURLResponse else {
+                throw FredError.transport(underlying: URLError(.badServerResponse))
+            }
+            if http.statusCode == 401 { throw FredError.unauthorized }
+            if http.statusCode == 404 { throw FredError.notFound }
+            if !(200...299).contains(http.statusCode) {
+                throw FredError.server(status: http.statusCode, message: String(data: data, encoding: .utf8))
+            }
+        }
+    }
+
     // MARK: - Memory / research / github sync (raw URLSession)
     //
     // These endpoints aren't in the OpenAPI spec yet because the response
@@ -317,6 +354,40 @@ final class FredClient {
         let sizeBytes: Int
     }
 
+    struct RepoIntelligenceDashboard: Decodable {
+        let lastRunAt: String?
+        let recommendations: [RepoRecommendation]
+    }
+
+    struct RepoRecommendation: Decodable, Identifiable, Equatable {
+        struct Target: Decodable, Equatable {
+            let owner: String
+            let repo: String
+            let label: String
+            let category: String
+            let safety: String?
+        }
+
+        struct Snapshot: Decodable, Equatable {
+            let url: String
+            let stars: Int
+            let forks: Int
+            let latestReleaseTag: String?
+            let latestCommitMessage: String?
+        }
+
+        let id: String
+        let target: Target
+        let snapshot: Snapshot
+        let posture: String
+        let reason: String
+        let action: String
+        let status: String
+        let createdAt: String
+        let updatedAt: String
+        let taskId: String?
+    }
+
     /// GET /api/agent/research/:id — full markdown body. Research feed
     /// detail view consumes this.
     func fetchResearchDetail(id: String) async throws -> ResearchDetail {
@@ -331,6 +402,56 @@ final class FredClient {
                 )
             }
             return try JSONDecoder().decode(ResearchDetail.self, from: data)
+        }
+    }
+
+    func fetchRepoIntelligence() async throws -> RepoIntelligenceDashboard {
+        try await logged("GET", "/api/agent/repo-intelligence") {
+            let url = config.hostURL.appendingPathComponent("/api/agent/repo-intelligence")
+            let (data, response) = try await session.data(from: url)
+            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+                throw FredError.server(
+                    status: (response as? HTTPURLResponse)?.statusCode ?? -1,
+                    message: String(data: data, encoding: .utf8)
+                )
+            }
+            return try JSONDecoder().decode(RepoIntelligenceDashboard.self, from: data)
+        }
+    }
+
+    func runRepoIntelligenceScan() async throws -> RepoIntelligenceDashboard {
+        try await logged("POST", "/api/agent/repo-intelligence/run") {
+            let url = config.hostURL.appendingPathComponent("/api/agent/repo-intelligence/run")
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            let (data, response) = try await session.data(for: request)
+            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+                throw FredError.server(
+                    status: (response as? HTTPURLResponse)?.statusCode ?? -1,
+                    message: String(data: data, encoding: .utf8)
+                )
+            }
+            struct Envelope: Decodable { let dashboard: RepoIntelligenceDashboard }
+            return try JSONDecoder().decode(Envelope.self, from: data).dashboard
+        }
+    }
+
+    func resolveRepoRecommendation(id: String, action: String) async throws -> RepoRecommendation {
+        try await logged("POST", "/api/agent/repo-intelligence/recommendations/\(id)/\(action)") {
+            let url = config.hostURL.appendingPathComponent(
+                "/api/agent/repo-intelligence/recommendations/\(id)/\(action)"
+            )
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            let (data, response) = try await session.data(for: request)
+            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+                throw FredError.server(
+                    status: (response as? HTTPURLResponse)?.statusCode ?? -1,
+                    message: String(data: data, encoding: .utf8)
+                )
+            }
+            struct Envelope: Decodable { let recommendation: RepoRecommendation }
+            return try JSONDecoder().decode(Envelope.self, from: data).recommendation
         }
     }
 

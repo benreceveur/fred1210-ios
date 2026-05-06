@@ -23,11 +23,11 @@ private struct TaskListContentView: View {
     }
 
     private var openTasks: [Components.Schemas.Task] {
-        viewModel.tasks.filter { $0.status != .done }
+        viewModel.tasks.filter { viewModel.status(for: $0) != .done }
     }
 
     private var completedTasks: [Components.Schemas.Task] {
-        viewModel.tasks.filter { $0.status == .done }
+        viewModel.tasks.filter { viewModel.status(for: $0) == .done }
     }
 
     /// Renders a single task row with the standard swipe actions + context
@@ -35,7 +35,12 @@ private struct TaskListContentView: View {
     /// Completed section both get the same affordances without duplication.
     @ViewBuilder
     private func taskRow(_ task: Components.Schemas.Task) -> some View {
-        TaskRow(task: task)
+        TaskRow(
+            task: task,
+            effectiveStatus: viewModel.status(for: task),
+            effectivePriority: viewModel.priority(for: task),
+            isPending: viewModel.hasPendingMutation(task)
+        )
             .contentShape(Rectangle())
             .onTapGesture { detailTaskId = task.id }
             .listRowBackground(Theme.bgCard)
@@ -156,6 +161,31 @@ private struct TaskListContentView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     List {
+                        if viewModel.pendingMutationCount > 0 {
+                            Section {
+                                HStack(spacing: Theme.Spacing.sm) {
+                                    Image(systemName: "clock.arrow.circlepath")
+                                        .foregroundStyle(Theme.warning)
+                                    Text("\(viewModel.pendingMutationCount) change\(viewModel.pendingMutationCount == 1 ? "" : "s") waiting to sync")
+                                        .font(.system(size: Theme.Font.sm, weight: .semibold))
+                                        .foregroundStyle(Theme.textPrimary)
+                                    Spacer()
+                                }
+                                .listRowBackground(Theme.bgCard)
+                                ForEach(viewModel.pendingCreateTitles, id: \.self) { title in
+                                    HStack(spacing: Theme.Spacing.sm) {
+                                        Image(systemName: "plus.circle")
+                                            .foregroundStyle(Theme.primary)
+                                        Text(title)
+                                            .font(.system(size: Theme.Font.sm))
+                                            .foregroundStyle(Theme.textSecondary)
+                                            .lineLimit(1)
+                                    }
+                                    .listRowBackground(Theme.bgCard)
+                                }
+                            }
+                        }
+
                         // Open work lives in the default (unheadered) section so
                         // the common case — active tasks — reads like a clean
                         // list. Completed work is tucked into a collapsible
@@ -226,6 +256,7 @@ private struct TaskListContentView: View {
             }
             .task {
                 await viewModel.loadFromCache()
+                await viewModel.loadPendingMutations()
                 await viewModel.refresh()
             }
             .sheet(isPresented: $showingCreateSheet) {
@@ -274,6 +305,9 @@ private struct TaskListContentView: View {
 
 private struct TaskRow: View {
     let task: Components.Schemas.Task
+    let effectiveStatus: Components.Schemas.Task.StatusPayload
+    let effectivePriority: Components.Schemas.Task.PriorityPayload
+    let isPending: Bool
     @EnvironmentObject var clientHolder: ClientHolder
 
     var body: some View {
@@ -288,12 +322,18 @@ private struct TaskRow: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(task.title)
                     .font(.system(size: Theme.Font.md, weight: .semibold))
-                    .foregroundStyle(task.status == .done ? Theme.textMuted : Theme.textPrimary)
-                    .strikethrough(task.status == .done, color: Theme.textMuted)
+                    .foregroundStyle(effectiveStatus == .done ? Theme.textMuted : Theme.textPrimary)
+                    .strikethrough(effectiveStatus == .done, color: Theme.textMuted)
                 HStack(spacing: Theme.Spacing.sm) {
-                    Text(task.status.rawValue.replacingOccurrences(of: "-", with: " ").uppercased())
+                    Text(effectiveStatus.rawValue.replacingOccurrences(of: "-", with: " ").uppercased())
                         .font(.system(size: Theme.Font.xs, weight: .semibold))
                         .foregroundStyle(statusColor)
+                    if isPending {
+                        Label("Pending", systemImage: "clock")
+                            .font(.system(size: Theme.Font.xs, weight: .semibold))
+                            .foregroundStyle(Theme.warning)
+                            .labelStyle(.titleAndIcon)
+                    }
                     if let tags = task.tags, !tags.isEmpty {
                         Text("· \(tags.joined(separator: ", "))")
                             .font(.system(size: Theme.Font.xs))
@@ -303,7 +343,7 @@ private struct TaskRow: View {
                 }
             }
             Spacer()
-            Text(task.priority.rawValue.uppercased())
+            Text(effectivePriority.rawValue.uppercased())
                 .font(.system(size: Theme.Font.xs, weight: .bold))
                 .foregroundStyle(priorityColor)
         }
@@ -311,7 +351,7 @@ private struct TaskRow: View {
     }
 
     private var priorityColor: Color {
-        switch task.priority {
+        switch effectivePriority {
         case .urgent: return Theme.error
         case .high: return Theme.warning
         case .medium: return Theme.info
@@ -321,7 +361,7 @@ private struct TaskRow: View {
     }
 
     private var statusColor: Color {
-        switch task.status {
+        switch effectiveStatus {
         case .inbox: return Theme.textMuted
         case .todo: return Theme.info
         case .inProgress: return Theme.primary

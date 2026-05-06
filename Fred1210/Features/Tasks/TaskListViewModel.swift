@@ -5,14 +5,25 @@ final class TaskListViewModel: ObservableObject {
     @Published private(set) var tasks: [Components.Schemas.Task] = []
     @Published private(set) var isLoading = false
     @Published private(set) var cacheAge: Date?
+    @Published private(set) var pendingMutationCount = 0
+    @Published private(set) var pendingCreateTitles: [String] = []
     @Published var displayError: FredDisplayError?
 
     private let client: FredClient
     private let cache: ResponseCache
+    private let pendingStore: PendingTaskMutationStore
+    private var pendingStatusOverrides: [String: Components.Schemas.Task.StatusPayload] = [:]
+    private var pendingPriorityOverrides: [String: Components.Schemas.Task.PriorityPayload] = [:]
+    private var pendingDeleteIds = Set<String>()
 
-    init(client: FredClient, cache: ResponseCache = .shared) {
+    init(
+        client: FredClient,
+        cache: ResponseCache = .shared,
+        pendingStore: PendingTaskMutationStore = .shared
+    ) {
         self.client = client
         self.cache = cache
+        self.pendingStore = pendingStore
     }
 
     /// Populate from disk cache. Safe to call from `.task` — yields
@@ -31,11 +42,12 @@ final class TaskListViewModel: ObservableObject {
         isLoading = true
         defer { isLoading = false }
         do {
+            await drainPendingMutations()
             let items = try await client.listTasks()
             let sorted = items.sorted { lhs, rhs in
                 priorityRank(lhs.priority) < priorityRank(rhs.priority)
             }
-            tasks = sorted
+            tasks = sorted.filter { !pendingDeleteIds.contains($0.id) }
             displayError = nil
             cacheAge = Date()
             await cache.write(.tasks, sorted)
@@ -78,7 +90,26 @@ final class TaskListViewModel: ObservableObject {
             }
             tasks.insert(task, at: 0)
         } catch {
-            displayError = FredDisplayError.from(error, endpoint: "Create task", retry: nil)
+            if shouldQueue(error) {
+                await pendingStore.enqueue(.init(
+                    kind: .create,
+                    payload: createPayload(
+                        title: trimmed,
+                        description: description,
+                        priority: priority
+                    )
+                ))
+                await loadPendingMutations()
+                displayError = FredDisplayError(
+                    endpoint: "Create task",
+                    primaryMessage: "Task queued",
+                    detailMessage: "Fred will create this task when the Mac Mini is reachable again.",
+                    httpStatus: nil,
+                    retry: { [weak self] in await self?.refresh() }
+                )
+            } else {
+                displayError = FredDisplayError.from(error, endpoint: "Create task", retry: nil)
+            }
         }
     }
 
@@ -91,17 +122,29 @@ final class TaskListViewModel: ObservableObject {
         case .inbox: nextStatus = .todo
         case .review: nextStatus = .done
         }
-        await patch(task.id, updates: .init(status: nextStatus))
+        await patch(
+            task.id,
+            updates: .init(status: nextStatus),
+            rawPayload: ["status": nextStatus.rawValue]
+        )
     }
 
     /// Directly set a task's status — used by the long-press context menu.
     func setStatus(_ task: Components.Schemas.Task, to status: Components.Schemas.UpdateTaskRequest.StatusPayload) async {
-        await patch(task.id, updates: .init(status: status))
+        await patch(
+            task.id,
+            updates: .init(status: status),
+            rawPayload: ["status": status.rawValue]
+        )
     }
 
     /// Directly set a task's priority — used by the long-press context menu.
     func setPriority(_ task: Components.Schemas.Task, to priority: Components.Schemas.UpdateTaskRequest.PriorityPayload) async {
-        await patch(task.id, updates: .init(priority: priority))
+        await patch(
+            task.id,
+            updates: .init(priority: priority),
+            rawPayload: ["priority": priority.rawValue]
+        )
     }
 
     func delete(_ task: Components.Schemas.Task) async {
@@ -111,24 +154,188 @@ final class TaskListViewModel: ObservableObject {
         do {
             try await client.deleteTask(id: task.id)
         } catch {
-            displayError = FredDisplayError.from(error, endpoint: "Delete task", retry: nil)
-            if let index { tasks.insert(task, at: index) }
+            if shouldQueue(error) {
+                pendingDeleteIds.insert(task.id)
+                await pendingStore.enqueue(.init(kind: .delete, taskId: task.id))
+                await loadPendingMutations()
+                displayError = FredDisplayError(
+                    endpoint: "Delete task",
+                    primaryMessage: "Delete queued",
+                    detailMessage: "Fred will delete this task when the Mac Mini is reachable again.",
+                    httpStatus: nil,
+                    retry: { [weak self] in await self?.refresh() }
+                )
+            } else {
+                displayError = FredDisplayError.from(error, endpoint: "Delete task", retry: nil)
+                if let index { tasks.insert(task, at: index) }
+            }
         }
     }
 
     func clearError() { displayError = nil }
 
+    func loadPendingMutations() async {
+        let pending = await pendingStore.list()
+        pendingMutationCount = pending.count
+        pendingCreateTitles = pending
+            .filter { $0.kind == .create }
+            .compactMap { $0.payload["title"] }
+        rebuildPendingOverrides(from: pending)
+        tasks = tasks.filter { !pendingDeleteIds.contains($0.id) }
+    }
+
+    func status(for task: Components.Schemas.Task) -> Components.Schemas.Task.StatusPayload {
+        pendingStatusOverrides[task.id] ?? task.status
+    }
+
+    func priority(for task: Components.Schemas.Task) -> Components.Schemas.Task.PriorityPayload {
+        pendingPriorityOverrides[task.id] ?? task.priority
+    }
+
+    func hasPendingMutation(_ task: Components.Schemas.Task) -> Bool {
+        pendingStatusOverrides[task.id] != nil
+            || pendingPriorityOverrides[task.id] != nil
+            || pendingDeleteIds.contains(task.id)
+    }
+
     // MARK: -
 
-    private func patch(_ id: String, updates: Components.Schemas.UpdateTaskRequest) async {
+    private func patch(
+        _ id: String,
+        updates: Components.Schemas.UpdateTaskRequest,
+        rawPayload: [String: String]
+    ) async {
         do {
             let updated = try await client.updateTask(id: id, patch: updates)
             if let index = tasks.firstIndex(where: { $0.id == id }) {
                 tasks[index] = updated
             }
         } catch {
-            displayError = FredDisplayError.from(error, endpoint: "Update task", retry: nil)
+            if shouldQueue(error) {
+                applyPendingOverride(taskId: id, payload: rawPayload)
+                await pendingStore.enqueue(.init(kind: .update, taskId: id, payload: rawPayload))
+                await loadPendingMutations()
+                displayError = FredDisplayError(
+                    endpoint: "Update task",
+                    primaryMessage: "Task update queued",
+                    detailMessage: "The change is saved locally and will sync when Fred is reachable.",
+                    httpStatus: nil,
+                    retry: { [weak self] in await self?.refresh() }
+                )
+            } else {
+                displayError = FredDisplayError.from(error, endpoint: "Update task", retry: nil)
+            }
         }
+    }
+
+    private func drainPendingMutations() async {
+        let pending = await pendingStore.list()
+        guard !pending.isEmpty else {
+            await loadPendingMutations()
+            return
+        }
+
+        for mutation in pending {
+            do {
+                switch mutation.kind {
+                case .create:
+                    try await client.createTaskRaw(mutation.payload)
+                case .update:
+                    guard let taskId = mutation.taskId else { continue }
+                    try await client.updateTaskRaw(id: taskId, payload: mutation.payload)
+                case .delete:
+                    guard let taskId = mutation.taskId else { continue }
+                    try await client.deleteTask(id: taskId)
+                }
+                await pendingStore.remove(id: mutation.id)
+            } catch {
+                await pendingStore.markFailed(id: mutation.id, error: error.localizedDescription)
+                break
+            }
+        }
+        await loadPendingMutations()
+    }
+
+    private func rebuildPendingOverrides(from pending: [PendingTaskMutation]) {
+        pendingStatusOverrides = [:]
+        pendingPriorityOverrides = [:]
+        pendingDeleteIds = []
+
+        for mutation in pending {
+            switch mutation.kind {
+            case .create:
+                continue
+            case .update:
+                guard let taskId = mutation.taskId else { continue }
+                applyPendingOverride(taskId: taskId, payload: mutation.payload)
+            case .delete:
+                if let taskId = mutation.taskId {
+                    pendingDeleteIds.insert(taskId)
+                }
+            }
+        }
+    }
+
+    private func applyPendingOverride(taskId: String, payload: [String: String]) {
+        if let status = payload["status"], let parsed = parseTaskStatus(status) {
+            pendingStatusOverrides[taskId] = parsed
+        }
+        if let priority = payload["priority"], let parsed = parseTaskPriority(priority) {
+            pendingPriorityOverrides[taskId] = parsed
+        }
+    }
+
+    private func createPayload(
+        title: String,
+        description: String?,
+        priority: Components.Schemas.CreateTaskRequest.PriorityPayload
+    ) -> [String: String] {
+        var payload: [String: String] = [
+            "title": title,
+            "status": "todo",
+            "priority": priority.rawValue
+        ]
+        if let description, !description.isEmpty {
+            payload["description"] = description
+        }
+        return payload
+    }
+
+    private func parseTaskStatus(_ raw: String) -> Components.Schemas.Task.StatusPayload? {
+        switch raw {
+        case "inbox": return .inbox
+        case "todo": return .todo
+        case "in-progress": return .inProgress
+        case "review": return .review
+        case "done": return .done
+        default: return nil
+        }
+    }
+
+    private func parseTaskPriority(_ raw: String) -> Components.Schemas.Task.PriorityPayload? {
+        switch raw {
+        case "none": return .none
+        case "low": return .low
+        case "medium": return .medium
+        case "high": return .high
+        case "urgent": return .urgent
+        default: return nil
+        }
+    }
+
+    private func shouldQueue(_ error: Error) -> Bool {
+        if case FredError.transport = error {
+            return true
+        }
+        let nsError = error as NSError
+        return nsError.domain == NSURLErrorDomain
+            && [
+                NSURLErrorTimedOut,
+                NSURLErrorCannotFindHost,
+                NSURLErrorCannotConnectToHost,
+                NSURLErrorNetworkConnectionLost,
+                NSURLErrorNotConnectedToInternet
+            ].contains(nsError.code)
     }
 
     private func priorityRank(_ priority: Components.Schemas.Task.PriorityPayload) -> Int {

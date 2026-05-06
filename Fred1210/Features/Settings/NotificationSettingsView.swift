@@ -33,6 +33,36 @@ struct NotificationSettingsView: View {
                     systemImage: "antenna.radiowaves.left.and.right",
                     isOn: binding(for: \.transportAlerts, key: "transportAlerts")
                 )
+                row(
+                    "Needs approval",
+                    "Recommendations Fred wants you to approve or dismiss.",
+                    systemImage: "checkmark.seal",
+                    isOn: binding(for: \.needsApproval, key: "needsApproval")
+                )
+                row(
+                    "Security",
+                    "Security posture findings and hardening work.",
+                    systemImage: "lock.shield",
+                    isOn: binding(for: \.security, key: "security")
+                )
+                row(
+                    "Task completed",
+                    "Work Fred finished without needing review.",
+                    systemImage: "checkmark.circle",
+                    isOn: binding(for: \.taskCompleted, key: "taskCompleted")
+                )
+                row(
+                    "Fred blocked",
+                    "Work stopped because Fred needs access, approval, or a decision.",
+                    systemImage: "hand.raised",
+                    isOn: binding(for: \.fredBlocked, key: "fredBlocked")
+                )
+                row(
+                    "System health",
+                    "Mac Mini, Docker, Tailscale, and runtime health changes.",
+                    systemImage: "desktopcomputer.and.macbook",
+                    isOn: binding(for: \.systemHealth, key: "systemHealth")
+                )
             } header: {
                 Text("Channels")
             } footer: {
