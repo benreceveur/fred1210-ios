@@ -31,7 +31,7 @@ final class FredClient {
         // existing resource timeout and covers p99 pipeline latency.
         configuration.timeoutIntervalForRequest = 120
         configuration.timeoutIntervalForResource = 180
-        configuration.waitsForConnectivity = false
+        configuration.waitsForConnectivity = true
         self.session = URLSession(configuration: configuration)
     }
 
