@@ -210,6 +210,26 @@ final class FredClient {
         return args.count == 1 ? "\(key): \(trimmed)" : "\(key): \(trimmed) +\(args.count - 1)"
     }
 
+    private static func makeTolerantJSONDecoder() -> JSONDecoder {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .custom { dec in
+            let container = try dec.singleValueContainer()
+            let raw = try container.decode(String.self)
+            let withFractional = ISO8601DateFormatter()
+            withFractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            let plain = ISO8601DateFormatter()
+            plain.formatOptions = [.withInternetDateTime]
+            if let date = withFractional.date(from: raw) ?? plain.date(from: raw) {
+                return date
+            }
+            throw DecodingError.dataCorruptedError(
+                in: container,
+                debugDescription: "Invalid ISO8601 date: \(raw)"
+            )
+        }
+        return decoder
+    }
+
     func fetchHistory() async throws -> Components.Schemas.HistoryResponse {
         try await logged("GET", "/api/agent/history") {
             let output = try await makeClient().getChatHistory(.init())
@@ -233,10 +253,30 @@ final class FredClient {
 
     func listTasks() async throws -> [Components.Schemas.Task] {
         try await logged("GET", "/api/agent/tasks") {
-            let output = try await makeClient().listTasks(
-                .init(query: .init(compact: true, doneLimit: 25, descriptionLimit: 500))
+            var comps = URLComponents(
+                url: config.hostURL.appendingPathComponent("api/agent/tasks"),
+                resolvingAgainstBaseURL: false
             )
-            return try output.ok.body.json.tasks
+            comps?.queryItems = [
+                URLQueryItem(name: "compact", value: "true"),
+                URLQueryItem(name: "doneLimit", value: "25"),
+                URLQueryItem(name: "descriptionLimit", value: "500")
+            ]
+            guard let url = comps?.url else { throw FredError.transport(underlying: URLError(.badURL)) }
+            let (data, response) = try await apiSession.data(from: url)
+            guard let http = response as? HTTPURLResponse else {
+                throw FredError.transport(underlying: URLError(.badServerResponse))
+            }
+            if http.statusCode == 401 { throw FredError.unauthorized }
+            if !(200...299).contains(http.statusCode) {
+                throw FredError.server(status: http.statusCode, message: String(data: data, encoding: .utf8))
+            }
+            struct Envelope: Decodable { let tasks: [Components.Schemas.Task] }
+            do {
+                return try Self.makeTolerantJSONDecoder().decode(Envelope.self, from: data).tasks
+            } catch {
+                throw FredError.decoding(underlying: error)
+            }
         }
     }
 
@@ -577,19 +617,7 @@ final class FredClient {
             // with a tolerant ISO8601 date strategy matches what
             // TolerantISO8601Transcoder does for the typed client elsewhere.
             struct Envelope: Decodable { let task: Components.Schemas.Task }
-            let decoder = JSONDecoder()
-            let withFractional = ISO8601DateFormatter()
-            withFractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            let plain = ISO8601DateFormatter()
-            plain.formatOptions = [.withInternetDateTime]
-            decoder.dateDecodingStrategy = .custom { dec in
-                let container = try dec.singleValueContainer()
-                let raw = try container.decode(String.self)
-                if let d = withFractional.date(from: raw) { return d }
-                if let d = plain.date(from: raw) { return d }
-                throw DecodingError.dataCorruptedError(in: container, debugDescription: "Invalid ISO8601 date: \(raw)")
-            }
-            let env = try decoder.decode(Envelope.self, from: data)
+            let env = try Self.makeTolerantJSONDecoder().decode(Envelope.self, from: data)
             return env.task
         }
     }

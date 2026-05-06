@@ -314,7 +314,7 @@ final class TaskListViewModel: ObservableObject {
 
     private func parseTaskPriority(_ raw: String) -> Components.Schemas.Task.PriorityPayload? {
         switch raw {
-        case "none": return .none
+        case "none": return Components.Schemas.Task.PriorityPayload.none
         case "low": return .low
         case "medium": return .medium
         case "high": return .high
