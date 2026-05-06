@@ -7,6 +7,7 @@ struct Fred1210App: App {
     @StateObject private var fredConfig: FredConfig
     @StateObject private var clientHolder: ClientHolder
     @StateObject private var pushManager: PushManager
+    @StateObject private var router = AppRouter()
 
     init() {
         let config = FredConfig()
@@ -34,6 +35,7 @@ struct Fred1210App: App {
                 .environmentObject(fredConfig)
                 .environmentObject(clientHolder)
                 .environmentObject(pushManager)
+                .environmentObject(router)
                 .preferredColorScheme(.dark)
                 .task {
                     // Ask once per install; iOS remembers the answer so

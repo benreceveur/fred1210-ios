@@ -44,6 +44,7 @@ struct TasksWidgetView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .widgetURL(URL(string: "fred1210://tasks"))
     }
 
     private var mediumView: some View {
@@ -84,6 +85,7 @@ struct TasksWidgetView: View {
             Spacer(minLength: 0)
         }
         .padding(.vertical, 2)
+        .widgetURL(URL(string: "fred1210://tasks"))
     }
 
     private var notConfigured: some View {
@@ -169,5 +171,47 @@ struct TasksWidgetView: View {
         } else {
             Text("Fred · all caught up")
         }
+    }
+}
+
+struct NeedsBobWidgetView: View {
+    let entry: TasksEntry
+
+    private var needsBob: [WidgetTask] {
+        entry.tasks.filter { $0.status == "review" || $0.priority == "urgent" }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("\(needsBob.count)")
+                    .font(.system(size: 30, weight: .bold, design: .rounded))
+                    .foregroundStyle(needsBob.isEmpty ? .green : .orange)
+                Text("Needs Bob")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.7))
+                Spacer()
+            }
+            Divider().overlay(Color.white.opacity(0.15))
+            if needsBob.isEmpty {
+                Text("No approvals waiting.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.white.opacity(0.65))
+            } else {
+                ForEach(needsBob.prefix(3)) { task in
+                    HStack(spacing: 8) {
+                        Circle()
+                            .fill(task.priority == "urgent" ? .red : .orange)
+                            .frame(width: 6, height: 6)
+                        Text(task.title)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.92))
+                            .lineLimit(1)
+                    }
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .widgetURL(URL(string: "fred1210://tasks"))
     }
 }

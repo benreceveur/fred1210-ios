@@ -5,11 +5,23 @@ import SwiftUI
 struct ResearchView: View {
     @EnvironmentObject var clientHolder: ClientHolder
     @State private var items: [Components.Schemas.ResearchItem] = []
+    @State private var reviewed: [String: ReviewedResearchRecord] = [:]
+    @State private var showingReviewed = false
     @State private var isLoading = false
     @State private var errorMessage: String?
 
+    private var visibleItems: [Components.Schemas.ResearchItem] {
+        showingReviewed ? items : items.filter { reviewed[$0.id] == nil }
+    }
+
     var body: some View {
         List {
+            Section {
+                Toggle("Show reviewed research", isOn: $showingReviewed)
+                    .foregroundStyle(Theme.textPrimary)
+            }
+            .listRowBackground(Theme.bgCard)
+
             if let errorMessage {
                 Text(errorMessage)
                     .foregroundStyle(Theme.error)
@@ -21,23 +33,31 @@ struct ResearchView: View {
                     Text("Loading research…").foregroundStyle(Theme.textMuted)
                 }
                 .listRowBackground(Theme.bgCard)
-            } else if items.isEmpty {
+            } else if visibleItems.isEmpty {
                 Text("No research saved yet. Ask Fred to research something and save the findings.")
                     .foregroundStyle(Theme.textMuted)
                     .listRowBackground(Theme.bgCard)
             } else {
-                ForEach(items, id: \.id) { item in
+                ForEach(visibleItems, id: \.id) { item in
                     NavigationLink {
                         ResearchDetailView(itemId: item.id, fallbackTitle: item.title)
                     } label: {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(item.title)
-                                .font(.system(size: Theme.Font.md, weight: .semibold))
-                                .foregroundStyle(Theme.textPrimary)
-                                .lineLimit(2)
-                            Text(item.savedAt.formatted(.relative(presentation: .numeric)))
-                                .font(.system(size: Theme.Font.xs))
-                                .foregroundStyle(Theme.textMuted)
+                        HStack(alignment: .top, spacing: Theme.Spacing.sm) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(item.title)
+                                    .font(.system(size: Theme.Font.md, weight: .semibold))
+                                    .foregroundStyle(Theme.textPrimary)
+                                    .lineLimit(2)
+                                Text(item.savedAt.formatted(.relative(presentation: .numeric)))
+                                    .font(.system(size: Theme.Font.xs))
+                                    .foregroundStyle(Theme.textMuted)
+                            }
+                            Spacer()
+                            if let decision = reviewed[item.id]?.decision {
+                                Text(decision.rawValue.uppercased())
+                                    .font(.system(size: Theme.Font.xs, weight: .bold))
+                                    .foregroundStyle(Theme.success)
+                            }
                         }
                     }
                     .listRowBackground(Theme.bgCard)
@@ -60,6 +80,7 @@ struct ResearchView: View {
         isLoading = true
         defer { isLoading = false }
         do {
+            reviewed = await ReviewedResearchStore.shared.records()
             items = try await clientHolder.client.listRecentResearch(limit: 50)
             errorMessage = nil
         } catch {
@@ -76,6 +97,7 @@ struct ResearchDetailView: View {
     let fallbackTitle: String
     @EnvironmentObject var clientHolder: ClientHolder
     @State private var detail: FredClient.ResearchDetail?
+    @State private var decision: ReviewedResearchRecord.Decision?
     @State private var isLoading = false
     @State private var errorMessage: String?
 
@@ -89,6 +111,7 @@ struct ResearchDetailView: View {
                     Text(relativeAge(detail.savedAt))
                         .font(.system(size: Theme.Font.xs))
                         .foregroundStyle(Theme.textMuted)
+                    decisionControls(for: detail)
                     decisionSummary(for: detail)
                     Divider().overlay(Theme.border)
                     // Markdown rendering — SwiftUI's AttributedString(markdown:)
@@ -193,6 +216,38 @@ struct ResearchDetailView: View {
         }
     }
 
+    private func decisionControls(for detail: FredClient.ResearchDetail) -> some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+            HStack(spacing: Theme.Spacing.sm) {
+                decisionButton("Adopt", .adopt, Theme.success, detail)
+                decisionButton("Adapt", .adapt, Theme.primary, detail)
+                decisionButton("Ignore", .ignore, Theme.textMuted, detail)
+            }
+            if let decision {
+                Label("Marked \(decision.rawValue)", systemImage: "checkmark.circle.fill")
+                    .font(.system(size: Theme.Font.xs, weight: .semibold))
+                    .foregroundStyle(Theme.success)
+            }
+        }
+    }
+
+    private func decisionButton(
+        _ title: String,
+        _ value: ReviewedResearchRecord.Decision,
+        _ color: Color,
+        _ detail: FredClient.ResearchDetail
+    ) -> some View {
+        Button {
+            Task { await mark(detail, as: value) }
+        } label: {
+            Text(title)
+                .font(.system(size: Theme.Font.xs, weight: .bold))
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.bordered)
+        .tint(color)
+    }
+
     private func summaryBlock(title: String, icon: String, color: Color, body: String) -> some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
             Label(title, systemImage: icon)
@@ -220,6 +275,11 @@ struct ResearchDetailView: View {
         } catch {
             errorMessage = "Couldn't create task: \(error.localizedDescription)"
         }
+    }
+
+    private func mark(_ detail: FredClient.ResearchDetail, as nextDecision: ReviewedResearchRecord.Decision) async {
+        await ReviewedResearchStore.shared.mark(id: detail.id, title: detail.title, decision: nextDecision)
+        decision = nextDecision
     }
 
     private func firstMatchingLine(in content: String, markers: [String]) -> String? {
@@ -263,6 +323,7 @@ struct ResearchDetailView: View {
         defer { isLoading = false }
         do {
             detail = try await clientHolder.client.fetchResearchDetail(id: itemId)
+            decision = await ReviewedResearchStore.shared.records()[itemId]?.decision
             errorMessage = nil
         } catch {
             errorMessage = "Couldn't load: \(error.localizedDescription)"

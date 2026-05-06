@@ -70,16 +70,40 @@ private struct VoiceContentView: View {
                     }
                 }
                 if viewModel.transcript.isEmpty && viewModel.responseText.isEmpty {
-                    Text("Hold the mic to talk to Fred.")
-                        .font(.system(size: Theme.Font.md))
-                        .foregroundStyle(Theme.textMuted)
-                        .frame(maxWidth: .infinity, alignment: .center)
-                        .padding(.top, Theme.Spacing.xxl)
+                    quickCommands
                 }
             }
             .padding(Theme.Spacing.xl)
         }
         .frame(maxHeight: .infinity)
+    }
+
+    private var quickCommands: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+            ForEach([
+                "What needs my attention?",
+                "Run a Fred health check",
+                "Summarize open security work",
+                "What did Fred finish today?"
+            ], id: \.self) { command in
+                Button {
+                    Task { await viewModel.runQuickCommand(command) }
+                } label: {
+                    HStack {
+                        Image(systemName: "bolt.circle")
+                            .foregroundStyle(Theme.primary)
+                        Text(command)
+                            .font(.system(size: Theme.Font.sm, weight: .semibold))
+                            .foregroundStyle(Theme.textPrimary)
+                        Spacer()
+                    }
+                    .padding(Theme.Spacing.md)
+                    .background(Theme.bgCard)
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md, style: .continuous))
+                }
+                .buttonStyle(.plain)
+            }
+        }
     }
 
     @ViewBuilder
