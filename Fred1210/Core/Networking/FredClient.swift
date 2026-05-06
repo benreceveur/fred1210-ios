@@ -18,21 +18,31 @@ final class FredClient {
     /// Exposed so settings / diagnostics views can build ad-hoc URLs for
     /// endpoints we haven't wrapped in typed methods yet.
     var hostURL: URL { config.hostURL }
-    private let session: URLSession
+    private let apiSession: URLSession
+    private let longRunningSession: URLSession
 
     init(config: FredConfig) {
         self.config = config
-        let configuration = URLSessionConfiguration.default
+        let apiConfiguration = URLSessionConfiguration.default
+        // Normal screens should never sit on a spinner for minutes. If Fred is
+        // unreachable, usually because Tailscale is disconnected or the stored
+        // host is wrong, fail quickly so the screen can show its retry banner.
+        apiConfiguration.timeoutIntervalForRequest = 20
+        apiConfiguration.timeoutIntervalForResource = 45
+        apiConfiguration.waitsForConnectivity = false
+
+        let longRunningConfiguration = URLSessionConfiguration.default
         // Fred's /api/agent/chat routes through the full agent pipeline
         // (LLM + tool loop + council fallback) which routinely takes
         // 20–60s under normal load. A 15s request timeout was
         // cancelling the request before the server finished,
         // surfacing as "send error" in the Chat tab. 120s matches the
         // existing resource timeout and covers p99 pipeline latency.
-        configuration.timeoutIntervalForRequest = 120
-        configuration.timeoutIntervalForResource = 180
-        configuration.waitsForConnectivity = true
-        self.session = URLSession(configuration: configuration)
+        longRunningConfiguration.timeoutIntervalForRequest = 120
+        longRunningConfiguration.timeoutIntervalForResource = 180
+        longRunningConfiguration.waitsForConnectivity = false
+        self.apiSession = URLSession(configuration: apiConfiguration)
+        self.longRunningSession = URLSession(configuration: longRunningConfiguration)
     }
 
     /// Wraps an API call with timing + RequestLog emission. We log via
@@ -73,11 +83,11 @@ final class FredClient {
 
     // MARK: - Generated Client
 
-    private func makeClient() -> Client {
+    private func makeClient(session: URLSession? = nil) -> Client {
         Client(
             serverURL: config.hostURL,
             configuration: Configuration(dateTranscoder: TolerantISO8601Transcoder()),
-            transport: URLSessionTransport(configuration: .init(session: session))
+            transport: URLSessionTransport(configuration: .init(session: session ?? apiSession))
         )
     }
 
@@ -92,7 +102,7 @@ final class FredClient {
 
     func sendChatMessage(_ text: String) async throws -> Components.Schemas.ChatResponse {
         try await logged("POST", "/api/agent/chat") {
-            let output = try await makeClient().postChat(
+            let output = try await makeClient(session: longRunningSession).postChat(
                 .init(body: .json(.init(message: text)))
             )
             return try output.ok.body.json
@@ -115,7 +125,7 @@ final class FredClient {
     /// `error`, or when the caller cancels the enclosing Task.
     func sendChatMessageStreaming(_ text: String) -> AsyncThrowingStream<ChatStreamEvent, Error> {
         let hostURL = config.hostURL
-        let session = self.session
+        let session = self.longRunningSession
         return AsyncThrowingStream { continuation in
             let task = Task {
                 do {
@@ -209,7 +219,7 @@ final class FredClient {
 
     func fetchDashboard() async throws -> Components.Schemas.DashboardResponse {
         try await logged("GET", "/api/agent/dashboard") {
-            let output = try await makeClient().getDashboard(.init())
+            let output = try await makeClient().getDashboard(.init(query: .init(compact: true)))
             return try output.ok.body.json
         }
     }
@@ -223,7 +233,9 @@ final class FredClient {
 
     func listTasks() async throws -> [Components.Schemas.Task] {
         try await logged("GET", "/api/agent/tasks") {
-            let output = try await makeClient().listTasks(.init())
+            let output = try await makeClient().listTasks(
+                .init(query: .init(compact: true, doneLimit: 25, descriptionLimit: 500))
+            )
             return try output.ok.body.json.tasks
         }
     }
@@ -268,7 +280,7 @@ final class FredClient {
             request.httpMethod = "POST"
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.httpBody = try JSONSerialization.data(withJSONObject: payload, options: [])
-            let (data, response) = try await session.data(for: request)
+            let (data, response) = try await apiSession.data(for: request)
             guard let http = response as? HTTPURLResponse else {
                 throw FredError.transport(underlying: URLError(.badServerResponse))
             }
@@ -286,7 +298,7 @@ final class FredClient {
             request.httpMethod = "PATCH"
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.httpBody = try JSONSerialization.data(withJSONObject: payload, options: [])
-            let (data, response) = try await session.data(for: request)
+            let (data, response) = try await apiSession.data(for: request)
             guard let http = response as? HTTPURLResponse else {
                 throw FredError.transport(underlying: URLError(.badServerResponse))
             }
@@ -334,7 +346,7 @@ final class FredClient {
             if let query, !query.isEmpty { items.append(URLQueryItem(name: "q", value: query)) }
             comps?.queryItems = items
             guard let url = comps?.url else { throw FredError.transport(underlying: URLError(.badURL)) }
-            let (data, response) = try await session.data(from: url)
+            let (data, response) = try await apiSession.data(from: url)
             guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
                 throw FredError.server(
                     status: (response as? HTTPURLResponse)?.statusCode ?? -1,
@@ -393,7 +405,7 @@ final class FredClient {
     func fetchResearchDetail(id: String) async throws -> ResearchDetail {
         try await logged("GET", "/api/agent/research/\(id)") {
             let url = config.hostURL.appendingPathComponent("/api/agent/research/\(id)")
-            let (data, response) = try await session.data(from: url)
+            let (data, response) = try await apiSession.data(from: url)
             guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
                 if (response as? HTTPURLResponse)?.statusCode == 404 { throw FredError.notFound }
                 throw FredError.server(
@@ -408,7 +420,7 @@ final class FredClient {
     func fetchRepoIntelligence() async throws -> RepoIntelligenceDashboard {
         try await logged("GET", "/api/agent/repo-intelligence") {
             let url = config.hostURL.appendingPathComponent("/api/agent/repo-intelligence")
-            let (data, response) = try await session.data(from: url)
+            let (data, response) = try await apiSession.data(from: url)
             guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
                 throw FredError.server(
                     status: (response as? HTTPURLResponse)?.statusCode ?? -1,
@@ -424,7 +436,7 @@ final class FredClient {
             let url = config.hostURL.appendingPathComponent("/api/agent/repo-intelligence/run")
             var request = URLRequest(url: url)
             request.httpMethod = "POST"
-            let (data, response) = try await session.data(for: request)
+            let (data, response) = try await apiSession.data(for: request)
             guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
                 throw FredError.server(
                     status: (response as? HTTPURLResponse)?.statusCode ?? -1,
@@ -443,7 +455,7 @@ final class FredClient {
             )
             var request = URLRequest(url: url)
             request.httpMethod = "POST"
-            let (data, response) = try await session.data(for: request)
+            let (data, response) = try await apiSession.data(for: request)
             guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
                 throw FredError.server(
                     status: (response as? HTTPURLResponse)?.statusCode ?? -1,
@@ -460,7 +472,7 @@ final class FredClient {
     func listConfiguredSyncRepos() async throws -> (repos: [String], owners: [String]) {
         try await logged("GET", "/api/agent/github/sync/repos") {
             let url = config.hostURL.appendingPathComponent("/api/agent/github/sync/repos")
-            let (data, response) = try await session.data(from: url)
+            let (data, response) = try await apiSession.data(from: url)
             guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
                 throw FredError.server(
                     status: (response as? HTTPURLResponse)?.statusCode ?? -1,
@@ -486,7 +498,7 @@ final class FredClient {
             let url = config.hostURL.appendingPathComponent("/api/agent/push/test")
             var request = URLRequest(url: url)
             request.httpMethod = "POST"
-            let (data, response) = try await session.data(for: request)
+            let (data, response) = try await apiSession.data(for: request)
             guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
                 throw FredError.server(
                     status: (response as? HTTPURLResponse)?.statusCode ?? -1,
@@ -505,7 +517,7 @@ final class FredClient {
             let url = config.hostURL.appendingPathComponent("/api/agent/github/sync")
             var request = URLRequest(url: url)
             request.httpMethod = "POST"
-            let (_, response) = try await session.data(for: request)
+            let (_, response) = try await apiSession.data(for: request)
             guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
                 throw FredError.server(
                     status: (response as? HTTPURLResponse)?.statusCode ?? -1,
@@ -522,7 +534,7 @@ final class FredClient {
             let url = config.hostURL.appendingPathComponent(
                 "/api/agent/tasks/\(taskId)/attachments/\(attachmentId)"
             )
-            let (data, response) = try await session.data(from: url)
+            let (data, response) = try await apiSession.data(from: url)
             guard let http = response as? HTTPURLResponse else {
                 throw FredError.transport(underlying: URLError(.badServerResponse))
             }
@@ -552,7 +564,7 @@ final class FredClient {
             body.append(imageData)
             body.append("\(crlf)--\(boundary)--\(crlf)".data(using: .utf8)!)
             request.httpBody = body
-            let (data, response) = try await session.data(for: request)
+            let (data, response) = try await apiSession.data(for: request)
             guard let http = response as? HTTPURLResponse else {
                 throw FredError.transport(underlying: URLError(.badServerResponse))
             }
@@ -641,7 +653,7 @@ final class FredClient {
         )
         request.httpBody = body
 
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await longRunningSession.data(for: request)
         guard let http = response as? HTTPURLResponse else {
             throw FredError.transport(underlying: URLError(.badServerResponse))
         }
