@@ -1,6 +1,16 @@
 import Foundation
 
 @MainActor
+protocol FredInboxClient: AnyObject {
+    func listTasks() async throws -> [Components.Schemas.Task]
+    func fetchRepoIntelligence() async throws -> FredClient.RepoIntelligenceDashboard
+    func listRecentResearch(limit: Int) async throws -> [Components.Schemas.ResearchItem]
+    func fetchTransportHealth() async throws -> [Components.Schemas.TransportHealth]
+}
+
+extension FredClient: FredInboxClient {}
+
+@MainActor
 final class FredInboxViewModel: ObservableObject {
     @Published private(set) var tasks: [Components.Schemas.Task] = []
     @Published private(set) var recommendations: [FredClient.RepoRecommendation] = []
@@ -9,9 +19,9 @@ final class FredInboxViewModel: ObservableObject {
     @Published private(set) var isLoading = false
     @Published var displayError: FredDisplayError?
 
-    private let client: FredClient
+    private let client: FredInboxClient
 
-    init(client: FredClient) {
+    init(client: FredInboxClient) {
         self.client = client
     }
 
@@ -46,31 +56,55 @@ final class FredInboxViewModel: ObservableObject {
     func load() async {
         isLoading = true
         defer { isLoading = false }
-        do {
-            async let tasksRequest = client.listTasks()
-            async let repoRequest = client.fetchRepoIntelligence()
-            async let researchRequest = client.listRecentResearch(limit: 10)
-            async let transportsRequest = client.fetchTransportHealth()
 
-            let (tasks, repo, research, transports) = try await (
-                tasksRequest,
-                repoRequest,
-                researchRequest,
-                transportsRequest
-            )
+        async let tasksRequest = capture { try await client.listTasks() }
+        async let repoRequest = capture { try await client.fetchRepoIntelligence() }
+        async let researchRequest = capture { try await client.listRecentResearch(limit: 10) }
+        async let transportsRequest = capture { try await client.fetchTransportHealth() }
+
+        let (tasksResult, repoResult, researchResult, transportsResult) = await (
+            tasksRequest,
+            repoRequest,
+            researchRequest,
+            transportsRequest
+        )
+
+        var failures: [(String, Error)] = []
+
+        switch tasksResult {
+        case .success(let tasks):
             self.tasks = tasks.sorted { lhs, rhs in
                 priorityRank(lhs.priority) < priorityRank(rhs.priority)
             }
+        case .failure(let error):
+            failures.append(("Tasks", error))
+        }
+
+        switch repoResult {
+        case .success(let repo):
             self.recommendations = repo.recommendations
+        case .failure(let error):
+            failures.append(("Repo recommendations", error))
+        }
+
+        switch researchResult {
+        case .success(let research):
             self.research = research
+        case .failure(let error):
+            failures.append(("Research", error))
+        }
+
+        switch transportsResult {
+        case .success(let transports):
             self.transports = transports
+        case .failure(let error):
+            failures.append(("Transport health", error))
+        }
+
+        if failures.isEmpty {
             displayError = nil
-        } catch {
-            displayError = FredDisplayError.from(
-                error,
-                endpoint: "Inbox",
-                retry: { [weak self] in await self?.load() }
-            )
+        } else {
+            displayError = partialInboxError(from: failures)
         }
     }
 
@@ -86,5 +120,31 @@ final class FredInboxViewModel: ObservableObject {
         case .low: return 3
         case .none: return 4
         }
+    }
+
+    private func capture<T>(_ operation: () async throws -> T) async -> Result<T, Error> {
+        do {
+            return .success(try await operation())
+        } catch {
+            return .failure(error)
+        }
+    }
+
+    private func partialInboxError(from failures: [(String, Error)]) -> FredDisplayError {
+        let failedSections = failures.map(\.0).joined(separator: ", ")
+        let detail = failures
+            .map { section, error in
+                let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                return "\(section): \(message)"
+            }
+            .joined(separator: "\n")
+
+        return FredDisplayError(
+            endpoint: "Inbox",
+            primaryMessage: failures.count == 4 ? "Inbox failed to load" : "Some inbox sections did not load",
+            detailMessage: "\(failedSections)\n\(detail)",
+            httpStatus: nil,
+            retry: { [weak self] in await self?.load() }
+        )
     }
 }
