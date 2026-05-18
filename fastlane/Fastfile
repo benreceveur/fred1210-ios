@@ -17,6 +17,23 @@
 #
 # All lanes regenerate the Xcode project with xcodegen before running.
 
+require "shellwords"
+
+def load_fastlane_env_file
+  env_path = File.expand_path(".env.local", __dir__)
+  return unless File.exist?(env_path)
+
+  File.readlines(env_path).each do |line|
+    stripped = line.strip
+    next if stripped.empty? || stripped.start_with?("#") || !stripped.include?("=")
+
+    key, value = stripped.split("=", 2)
+    ENV[key] ||= value.gsub(/\A["']|["']\z/, "")
+  end
+end
+
+load_fastlane_env_file
+
 default_platform(:ios)
 
 BUNDLE_ID = ENV["FASTLANE_APP_IDENTIFIER"] || "com.example.fred1210"
@@ -26,6 +43,7 @@ PROJECT = "Fred1210.xcodeproj"
 
 platform :ios do
   before_all do
+    load_keychain_secrets
     UI.message("Regenerating Xcode project via xcodegen…")
     sh "cd .. && xcodegen generate"
   end
@@ -94,18 +112,40 @@ platform :ios do
       clean: true
     )
 
-    upload_to_testflight(
-      api_key: api_key,
-      ipa: "build/Fred1210.ipa",
-      skip_waiting_for_build_processing: true,
-      changelog: ENV["TESTFLIGHT_CHANGELOG"] || "Internal build"
-    )
+    if api_key
+      upload_to_testflight(
+        api_key: api_key,
+        ipa: "build/Fred1210.ipa",
+        groups: testflight_groups,
+        skip_waiting_for_build_processing: ENV["TESTFLIGHT_SKIP_WAITING"] == "true",
+        changelog: ENV["TESTFLIGHT_CHANGELOG"] || "Internal build"
+      )
+    else
+      upload_to_testflight_with_altool
+    end
+  end
+
+  def load_keychain_secrets
+    {
+      "APPLE_APP_SPECIFIC_PASSWORD" => "FASTLANE_APPLE_APPLICATION_SPECIFIC_PASSWORD",
+      "APP_STORE_CONNECT_API_KEY_ID" => "APP_STORE_CONNECT_API_KEY_ID",
+      "APP_STORE_CONNECT_API_KEY_ISSUER_ID" => "APP_STORE_CONNECT_API_KEY_ISSUER_ID",
+      "APP_STORE_CONNECT_API_KEY_KEY" => "APP_STORE_CONNECT_API_KEY_KEY"
+    }.each do |keychain_account, env_name|
+      next if ENV[env_name] && !ENV[env_name].strip.empty?
+
+      value = sh(
+        "security find-generic-password -s fred1210-ios -a #{keychain_account.shellescape} -w 2>/dev/null || true",
+        log: false
+      ).strip
+      ENV[env_name] = value unless value.empty?
+    end
   end
 
   def app_store_connect_api_key_from_env_or_nil
     key_id = ENV["APP_STORE_CONNECT_API_KEY_ID"]
     issuer_id = ENV["APP_STORE_CONNECT_API_KEY_ISSUER_ID"]
-    key_content = ENV["APP_STORE_CONNECT_API_KEY_KEY"]
+    key_content = normalized_app_store_connect_key_content(ENV["APP_STORE_CONNECT_API_KEY_KEY"])
     # Treat empty strings as absent — keychain `security find-generic-password`
     # prints nothing to stdout when the item is missing, and `$(...)` captures
     # that as an empty string, not nil.
@@ -119,5 +159,47 @@ platform :ios do
       is_key_content_base64: false,
       in_house: false
     )
+  end
+
+  def normalized_app_store_connect_key_content(value)
+    return nil if value.nil?
+
+    stripped = value.strip
+    return "" if stripped.empty?
+
+    if stripped.match?(/\A[0-9a-fA-F]+\z/) && stripped.start_with?("2d2d2d2d2d")
+      stripped = [stripped].pack("H*")
+    end
+
+    stripped.gsub("\\n", "\n")
+  end
+
+  def testflight_groups
+    (ENV["TESTFLIGHT_GROUPS"] || "Ben's Testing,Fred Recovery Link")
+      .split(",")
+      .map(&:strip)
+      .reject(&:empty?)
+  end
+
+  def upload_to_testflight_with_altool
+    username = ENV["FASTLANE_APPLE_ID"] || ENV["FASTLANE_USER"]
+    password = ENV["FASTLANE_APPLE_APPLICATION_SPECIFIC_PASSWORD"]
+    apple_id = ENV["APP_STORE_APPLE_ID"]
+    ipa_path = Actions.lane_context[SharedValues::IPA_OUTPUT_PATH] || File.expand_path("../build/Fred1210.ipa", __dir__)
+
+    UI.user_error!("FASTLANE_APPLE_ID must be set in fastlane/.env.local or the environment") if username.nil? || username.strip.empty?
+    UI.user_error!("FASTLANE_APPLE_APPLICATION_SPECIFIC_PASSWORD must be set or available in Keychain") if password.nil? || password.strip.empty?
+    UI.user_error!("IPA not found at #{ipa_path}") unless File.exist?(ipa_path)
+
+    ENV["ALTOOL_PASSWORD"] = password
+    command = [
+      "xcrun altool --upload-package",
+      ipa_path.shellescape,
+      "--username", username.shellescape,
+      "--password", "@env:ALTOOL_PASSWORD",
+      "--wait"
+    ]
+    command.push("--apple-id", apple_id.shellescape) if apple_id && !apple_id.strip.empty?
+    sh(command.join(" "))
   end
 end

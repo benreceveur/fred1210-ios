@@ -2,6 +2,17 @@
 # Real values live in `fastlane/.env.local` (gitignored) or environment vars.
 # See `fastlane/.env.local.example` for the template.
 
+env_path = File.expand_path(".env.local", __dir__)
+if File.exist?(env_path)
+  File.readlines(env_path).each do |line|
+    stripped = line.strip
+    next if stripped.empty? || stripped.start_with?("#") || !stripped.include?("=")
+
+    key, value = stripped.split("=", 2)
+    ENV[key] ||= value.gsub(/\A["']|["']\z/, "")
+  end
+end
+
 app_identifier(ENV["FASTLANE_APP_IDENTIFIER"] || "com.example.fred1210")
 apple_id(ENV["FASTLANE_APPLE_ID"] || "owner@example.com")
 team_id(ENV["FASTLANE_TEAM_ID"] || "TEAM_ID_HERE")

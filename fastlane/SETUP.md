@@ -24,6 +24,8 @@ cp fastlane/.env.local.example fastlane/.env.local
 #   FASTLANE_APP_IDENTIFIER=<same bundle id as above>
 #   FASTLANE_APPLE_ID=<your Apple ID email>
 #   FASTLANE_TEAM_ID=<same team id>
+#   APP_STORE_APPLE_ID=<numeric App Store Connect app ID, optional but recommended>
+#   TESTFLIGHT_GROUPS=<comma-separated TestFlight groups to receive uploads>
 ```
 
 Both `Config/Local.xcconfig` and `fastlane/.env.local` are gitignored.
@@ -88,18 +90,31 @@ If you want `workflow_dispatch` runs of `.github/workflows/ios-ci.yml` to publis
 ```bash
 cd /path/to/fred1210-ios
 
-# Load env (fastlane auto-loads fastlane/.env.local)
-export FASTLANE_APPLE_APPLICATION_SPECIFIC_PASSWORD="$(security find-generic-password -s fred1210-ios -a APPLE_APP_SPECIFIC_PASSWORD -w)"
-
 # Optional changelog
 export TESTFLIGHT_CHANGELOG="What's new in this build"
 
 fastlane beta
 ```
 
+The beta lane reads `fastlane/.env.local` automatically and also loads the
+`fred1210-ios` Keychain items listed above, so local runs do not need to export
+the app-specific password manually.
+
+When an App Store Connect API key is configured, `fastlane beta` uses fastlane's
+TestFlight upload action. Without an API key, it falls back to Apple's `altool`
+uploader with the app-specific password from Keychain.
+
+`TESTFLIGHT_GROUPS` defaults to `Ben's Testing,Fred Recovery Link`, so processed
+builds are attached to both the internal tester group and the public recovery
+link group.
+
+By default, the upload waits for Apple's processing status.
+Set `TESTFLIGHT_SKIP_WAITING=true` only when you explicitly want an upload-only
+run with API-key authentication and will check processing later.
+
 ## Bumping build numbers
 
-Build number is managed manually in `Config/Local.xcconfig` via `CURRENT_PROJECT_VERSION`. Increment it between releases. No plugin dependency.
+Build number is managed manually in `project.yml` via `CURRENT_PROJECT_VERSION`. Increment it between releases. No plugin dependency.
 
 ## Troubleshooting
 
@@ -108,6 +123,11 @@ Build number is managed manually in `Config/Local.xcconfig` via `CURRENT_PROJECT
 - **"Invalid provisioning profile"** — delete `~/Library/MobileDevice/Provisioning Profiles/` and rebuild. Xcode will regenerate.
 
 - **"Please sign in with an app-specific password"** — altool needs `FASTLANE_APPLE_APPLICATION_SPECIFIC_PASSWORD` set. See step 3A.
+
+- **Upload succeeds but build does not show in TestFlight** — first confirm
+  processing finished in App Store Connect → My Apps → Fred1210 → TestFlight.
+  Then make sure the build is attached to an Internal Testing group and that the
+  TestFlight app on the phone is signed in with an Apple ID in that group.
 
 - **"invalid curve name" on ASC API key** — known fastlane/Ruby 4 OpenSSL 3 bug. Use Option A (app-specific password) as a workaround, or pin fastlane to Ruby 3.x via a Gemfile.
 

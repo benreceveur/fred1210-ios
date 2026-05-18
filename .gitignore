@@ -70,3 +70,4 @@ fastlane/Appfile.local
 fastlane/.env
 fastlane/.env.*
 !fastlane/.env.example
+!fastlane/.env.local.example
