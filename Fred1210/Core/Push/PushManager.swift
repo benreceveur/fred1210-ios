@@ -101,6 +101,62 @@ final class PushManager: ObservableObject {
         self.session = session
     }
 
+    /// Notification category identifiers used in APNs payloads' `category`
+    /// field. The server (push-delivery.ts) sets `category` to one of these
+    /// strings when it wants actionable notification buttons. Keep this enum
+    /// in sync with `PushChannel`-to-category mapping on the server.
+    enum CategoryID: String {
+        case approval = "fred.approval"
+        case task = "fred.task"
+    }
+
+    /// Action identifiers received on notification taps. The server doesn't
+    /// see these — they're handled locally by AppDelegate which forwards to
+    /// approval/task APIs via FredClient.
+    enum ActionID: String {
+        case approve = "fred.action.approve"
+        case dismiss = "fred.action.dismiss"
+        case complete = "fred.action.complete"
+    }
+
+    /// Register notification categories so taps surface inline action buttons
+    /// without opening the app. Called once at app startup.
+    func registerCategories() {
+        let approve = UNNotificationAction(
+            identifier: ActionID.approve.rawValue,
+            title: "Approve",
+            options: [.authenticationRequired]
+        )
+        let dismiss = UNNotificationAction(
+            identifier: ActionID.dismiss.rawValue,
+            title: "Dismiss",
+            options: [.destructive]
+        )
+        let complete = UNNotificationAction(
+            identifier: ActionID.complete.rawValue,
+            title: "Mark done",
+            options: [.authenticationRequired]
+        )
+
+        let approvalCategory = UNNotificationCategory(
+            identifier: CategoryID.approval.rawValue,
+            actions: [approve, dismiss],
+            intentIdentifiers: [],
+            options: []
+        )
+        let taskCategory = UNNotificationCategory(
+            identifier: CategoryID.task.rawValue,
+            actions: [complete, dismiss],
+            intentIdentifiers: [],
+            options: []
+        )
+
+        UNUserNotificationCenter.current().setNotificationCategories([
+            approvalCategory,
+            taskCategory,
+        ])
+    }
+
     /// Check current notification status. Safe to call every launch.
     func refreshAuthStatus() async {
         let settings = await UNUserNotificationCenter.current().notificationSettings()
@@ -114,7 +170,17 @@ final class PushManager: ObservableObject {
 
     /// Ask iOS for notification permission. No-op if the user already
     /// answered — either yes or no.
+    ///
+    /// Set the launch env var `FRED_SCREENSHOT_MODE=1` to skip the prompt
+    /// entirely — used for clean simulator screenshots in CI/manual visual
+    /// verification. The screenshot path leaves `authState` at
+    /// `.notDetermined` so the in-app Settings screen still shows the
+    /// "Enable push notifications" button when the user wants it.
     func requestAuthorizationIfNeeded() async {
+        if ProcessInfo.processInfo.environment["FRED_SCREENSHOT_MODE"] == "1" {
+            await refreshAuthStatus()
+            return
+        }
         await refreshAuthStatus()
         guard authState == .notDetermined else { return }
 

@@ -5,20 +5,19 @@ struct RootView: View {
     @EnvironmentObject var config: FredConfig
     @EnvironmentObject var router: AppRouter
     @EnvironmentObject var clientHolder: ClientHolder
-    @State private var showingVoiceSheet = false
 
     var body: some View {
         TabView(selection: $router.selectedTab) {
-            FredInboxView()
-                .tabItem { Label("Inbox", systemImage: "tray.full") }
-                .tag(AppRouter.Tab.inbox)
+            DashboardView()
+                .tabItem { Label("Dashboard", systemImage: "rectangle.3.group.bubble.left") }
+                .tag(AppRouter.Tab.dashboard)
 
             ChatView()
                 .tabItem { Label("Chat", systemImage: "message") }
                 .tag(AppRouter.Tab.chat)
 
             ApprovalsView()
-                .tabItem { Label("Review", systemImage: "checkmark.seal") }
+                .tabItem { Label("Approvals", systemImage: "checkmark.seal") }
                 .tag(AppRouter.Tab.review)
 
             TaskListView()
@@ -30,25 +29,13 @@ struct RootView: View {
                 .tag(AppRouter.Tab.settings)
         }
         .tint(Theme.primary)
-        .overlay(alignment: .bottomTrailing) {
-            Button {
-                showingVoiceSheet = true
-            } label: {
-                Image(systemName: "mic.fill")
-                    .font(.system(size: 20, weight: .bold))
-                    .foregroundStyle(.white)
-                    .frame(width: 56, height: 56)
-                    .background(Theme.primary)
-                    .clipShape(Circle())
-                    .shadow(color: Theme.primary.opacity(0.35), radius: 12, y: 6)
-            }
-            .padding(.trailing, Theme.Spacing.lg)
-            .padding(.bottom, 74)
-            .accessibilityLabel("Ask Fred by voice")
-        }
-        .sheet(isPresented: $showingVoiceSheet) {
+        .sheet(isPresented: $router.isShowingVoiceSheet) {
             VoiceView()
                 .presentationDetents([.large])
+        }
+        .sheet(isPresented: $router.isShowingQuickCapture) {
+            QuickCaptureSheet()
+                .environmentObject(clientHolder)
         }
         .sheet(item: $router.activeSheet) { sheet in
             routedSheet(sheet)
@@ -83,6 +70,11 @@ struct RootView: View {
         case .health:
             NavigationStack {
                 ConnectivityView()
+                    .environmentObject(clientHolder)
+            }
+        case .inbox:
+            NavigationStack {
+                FredInboxView()
                     .environmentObject(clientHolder)
             }
         }

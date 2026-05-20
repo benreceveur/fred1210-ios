@@ -53,28 +53,28 @@ private struct DiagnosticsRow: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: Theme.Spacing.sm) {
                 Text(entry.method)
-                    .font(.system(size: Theme.Font.xs, weight: .bold))
+                    .font(Theme.TextStyle.captionBold)
                     .foregroundStyle(Theme.primary)
                 Text(statusText)
-                    .font(.system(size: Theme.Font.xs, weight: .semibold))
+                    .font(Theme.TextStyle.captionSemibold)
                     .foregroundStyle(statusColor)
                 Spacer()
                 Text("\(entry.latencyMs) ms")
-                    .font(.system(size: Theme.Font.xs))
+                    .font(Theme.TextStyle.caption)
                     .foregroundStyle(Theme.textMuted)
             }
             Text(entry.url)
-                .font(.system(size: Theme.Font.xs, design: .monospaced))
+                .font(.system(.caption, design: .monospaced))
                 .foregroundStyle(Theme.textPrimary)
                 .lineLimit(2)
             if let err = entry.error {
                 Text(err)
-                    .font(.system(size: Theme.Font.xs))
+                    .font(Theme.TextStyle.caption)
                     .foregroundStyle(Theme.error)
                     .lineLimit(2)
             }
             Text(entry.timestamp.relativeAge())
-                .font(.system(size: Theme.Font.xs))
+                .font(Theme.TextStyle.caption)
                 .foregroundStyle(Theme.textMuted)
         }
         .padding(.vertical, 4)

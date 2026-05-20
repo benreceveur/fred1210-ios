@@ -29,7 +29,7 @@ struct ConnectivityView: View {
                                 .foregroundStyle(Theme.textPrimary)
                             Spacer()
                             Text(transport.degraded ? "Degraded" : "OK")
-                                .font(.system(size: Theme.Font.xs, weight: .semibold))
+                                .font(Theme.TextStyle.captionSemibold)
                                 .foregroundStyle(transport.degraded ? Theme.warning : Theme.success)
                         }
                     }
@@ -45,7 +45,7 @@ struct ConnectivityView: View {
                 }
                 if let pushResult {
                     Text(pushResult)
-                        .font(.system(size: Theme.Font.xs))
+                        .font(Theme.TextStyle.caption)
                         .foregroundStyle(Theme.textMuted)
                 }
             }
@@ -61,7 +61,7 @@ struct ConnectivityView: View {
 
             Section {
                 Text("If a transport stays degraded, restart Fred via LaunchAgent:\n\n`launchctl kickstart -k gui/$(id -u)/com.fred1210bot`")
-                    .font(.system(size: Theme.Font.xs))
+                    .font(Theme.TextStyle.caption)
                     .foregroundStyle(Theme.textMuted)
             } header: {
                 Text("Recovery")
@@ -73,7 +73,6 @@ struct ConnectivityView: View {
         .background(Theme.bgDark)
         .navigationTitle("Connectivity")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbarColorScheme(.dark, for: .navigationBar)
         .toolbarBackground(Theme.bgCard, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
         .refreshable { await load() }
@@ -88,7 +87,7 @@ struct ConnectivityView: View {
                 .foregroundStyle(Theme.textPrimary)
             Spacer()
             Text(status)
-                .font(.system(size: Theme.Font.xs, weight: .semibold))
+                .font(Theme.TextStyle.captionSemibold)
                 .foregroundStyle(ok ? Theme.success : Theme.warning)
                 .lineLimit(1)
         }

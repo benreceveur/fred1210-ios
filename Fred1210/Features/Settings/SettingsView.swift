@@ -28,7 +28,7 @@ struct SettingsView: View {
                         Text("The URL the app connects to. Use your Tailscale-served Fred host (e.g. https://bobs-mac-mini.tail5a2996.ts.net).")
                         if let plist = viewModel.buildTimeDefault {
                             Text("Build default: \(plist)")
-                                .font(.system(size: Theme.Font.xs))
+                                .font(Theme.TextStyle.caption)
                                 .foregroundStyle(Theme.textMuted)
                         }
                     }
@@ -64,7 +64,7 @@ struct SettingsView: View {
                         Label("Notifications", systemImage: "bell")
                         Spacer()
                         Text(pushStatusLabel)
-                            .font(.system(size: Theme.Font.xs, weight: .semibold))
+                            .font(Theme.TextStyle.captionSemibold)
                             .foregroundStyle(pushStatusColor)
                     }
                     if pushManager.authState == .notDetermined {
@@ -73,16 +73,16 @@ struct SettingsView: View {
                         }
                     } else if pushManager.authState == .denied {
                         Text("Enable notifications for Fred1210 in System Settings → Notifications.")
-                            .font(.system(size: Theme.Font.xs))
+                            .font(Theme.TextStyle.caption)
                             .foregroundStyle(Theme.textMuted)
                     } else if let lastReg = pushManager.lastRegistration {
                         Text("Token registered \(lastReg.relativeAge())")
-                            .font(.system(size: Theme.Font.xs))
+                            .font(Theme.TextStyle.caption)
                             .foregroundStyle(Theme.textMuted)
                     }
                     if let err = pushManager.lastError {
                         Text(err)
-                            .font(.system(size: Theme.Font.xs))
+                            .font(Theme.TextStyle.caption)
                             .foregroundStyle(Theme.error)
                     }
                     // Channel-level mute/unmute lives behind its own screen

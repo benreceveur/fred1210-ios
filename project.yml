@@ -21,8 +21,8 @@ configFiles:
 settings:
   base:
     SWIFT_VERSION: "5.10"
-    MARKETING_VERSION: "2.4.0"
-    CURRENT_PROJECT_VERSION: "19"
+    MARKETING_VERSION: "2.5.0"
+    CURRENT_PROJECT_VERSION: "20"
     ENABLE_USER_SCRIPT_SANDBOXING: NO
     CODE_SIGN_STYLE: Automatic
     GENERATE_INFOPLIST_FILE: YES
@@ -104,6 +104,12 @@ targets:
         # here covers TestFlight; Apple auto-switches to "production" when
         # the build is promoted to the App Store.
         aps-environment: development
+        # NSUbiquitousKeyValueStore for syncing the Fred host URL across
+        # the user's Apple devices. The identifier follows the standard
+        # `<team>.<bundle-id>` convention so iCloud namespaces the KV
+        # store per app. FredConfig writes one key here on every host
+        # change; new installs adopt the synced value on first launch.
+        com.apple.developer.ubiquity-kvstore-identifier: $(TeamIdentifierPrefix)$(CFBundleIdentifier)
     dependencies:
       - package: swift-openapi-runtime
         product: OpenAPIRuntime

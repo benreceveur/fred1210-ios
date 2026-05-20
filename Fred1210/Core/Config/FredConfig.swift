@@ -20,6 +20,11 @@ final class FredConfig: ObservableObject {
     /// `$(AppIdentifierPrefix)` substring.
     static let accessGroup = "$(AppIdentifierPrefix)com.relayforgelabs.fred1210.shared"
     private static let hostKey = "fred-host"
+    /// iCloud Key-Value store key. NSUbiquitousKeyValueStore is per-iCloud
+    /// account and propagates within seconds across iPhone / iPad / Mac
+    /// (where the app is installed). 5kb total limit per app — we use a
+    /// single URL key well inside that.
+    private static let icloudHostKey = "fred-host-icloud"
 
     /// Fallback when Config/Local.xcconfig hasn't been set up and the
     /// user hasn't stored a host in Keychain yet.
@@ -50,13 +55,33 @@ final class FredConfig: ObservableObject {
         }
         self.keychain = shared
 
+        // If the Keychain has no host yet but iCloud KV does — usually
+        // because the user already set up Fred on another device — adopt
+        // the iCloud value as the starting point.
+        let kv = NSUbiquitousKeyValueStore.default
+        kv.synchronize()
+        let icloud = kv.string(forKey: Self.icloudHostKey)
         let stored = try? self.keychain.get(Self.hostKey)
-        let raw = stored?.isEmpty == false ? stored! : Self.defaultHost
-        let normalized = Self.normalizedHost(raw)
+        let initialRaw: String = {
+            if let stored, !stored.isEmpty { return stored }
+            if let icloud, !icloud.isEmpty { return icloud }
+            return Self.defaultHost
+        }()
+        let normalized = Self.normalizedHost(initialRaw)
         self.hostURL = URL(string: normalized)!
-        if normalized != raw {
+        if normalized != initialRaw || stored != normalized {
             try? self.keychain.set(normalized, key: Self.hostKey)
+            kv.set(normalized, forKey: Self.icloudHostKey)
         }
+
+        // Listen for iCloud KV pushes from other devices. SwiftUI views
+        // re-render via @Published `hostURL` when the value lands.
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleICloudHostChange(_:)),
+            name: NSUbiquitousKeyValueStore.didChangeExternallyNotification,
+            object: kv
+        )
     }
 
     func setHost(_ urlString: String) throws {
@@ -65,6 +90,31 @@ final class FredConfig: ObservableObject {
             throw FredConfigError.invalidURL
         }
         try keychain.set(normalized, key: Self.hostKey)
+        // Mirror to iCloud KV so a fresh install on another device picks
+        // up this URL on first launch. 5kb cap is well above any URL.
+        let kv = NSUbiquitousKeyValueStore.default
+        kv.set(normalized, forKey: Self.icloudHostKey)
+        kv.synchronize()
+        DispatchQueue.main.async { self.hostURL = url }
+    }
+
+    @objc private func handleICloudHostChange(_ notification: Notification) {
+        // iCloud only pushes when the *external* value changed — i.e. when
+        // another device wrote it. Adopt the new value if it differs from
+        // what we currently have stored locally.
+        guard let userInfo = notification.userInfo,
+              let reason = userInfo[NSUbiquitousKeyValueStoreChangeReasonKey] as? Int,
+              reason != NSUbiquitousKeyValueStoreQuotaViolationChange else {
+            return
+        }
+        let kv = NSUbiquitousKeyValueStore.default
+        guard let incoming = kv.string(forKey: Self.icloudHostKey),
+              !incoming.isEmpty else { return }
+        let normalized = Self.normalizedHost(incoming, repairPlaceholders: false)
+        guard let url = URL(string: normalized),
+              url.scheme != nil, url.host != nil,
+              url.absoluteString != hostURL.absoluteString else { return }
+        try? keychain.set(normalized, key: Self.hostKey)
         DispatchQueue.main.async { self.hostURL = url }
     }
 

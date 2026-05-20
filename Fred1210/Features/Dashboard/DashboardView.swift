@@ -9,6 +9,8 @@ struct DashboardView: View {
 }
 
 private struct DashboardContentView: View {
+    @EnvironmentObject var router: AppRouter
+    @EnvironmentObject var reachability: FredReachability
     @StateObject private var viewModel: DashboardViewModel
     @State private var refreshTask: Task<Void, Never>?
 
@@ -33,9 +35,50 @@ private struct DashboardContentView: View {
             .background(Theme.bgDark)
             .navigationTitle("Dashboard")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbarBackground(Theme.bgCard, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        router.activeSheet = .inbox
+                    } label: {
+                        Image(systemName: "tray.full")
+                            .accessibilityLabel("Open inbox")
+                    }
+                }
+                ToolbarItem(placement: .principal) {
+                    HStack(spacing: Theme.Spacing.xs) {
+                        Text("Dashboard")
+                            .font(Theme.TextStyle.headline)
+                            .foregroundStyle(Theme.textPrimary)
+                        ReachabilityDot(state: reachability.state) {
+                            Task { await reachability.pollNow() }
+                        }
+                    }
+                }
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    Button {
+                        Haptics.tap()
+                        router.isShowingQuickCapture = true
+                    } label: {
+                        Image(systemName: "plus.circle.fill")
+                            .accessibilityLabel("Quick capture task")
+                    }
+                    Button {
+                        router.isShowingVoiceSheet = true
+                    } label: {
+                        Image(systemName: "mic.fill")
+                            .accessibilityLabel("Ask Fred by voice")
+                            .accessibilityHint("Long-press to start recording immediately")
+                    }
+                    .simultaneousGesture(
+                        LongPressGesture(minimumDuration: 0.4).onEnded { _ in
+                            router.voiceAutoStart = true
+                            router.isShowingVoiceSheet = true
+                        }
+                    )
+                }
+            }
             .refreshable { await viewModel.refresh() }
             .task {
                 await viewModel.refresh()
@@ -54,22 +97,45 @@ private struct DashboardContentView: View {
 
     @ViewBuilder
     private var greetingHeader: some View {
-        HStack(alignment: .firstTextBaseline) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(greeting)
-                    .font(.system(size: Theme.Font.xl, weight: .bold))
-                    .foregroundStyle(Theme.textPrimary)
-                Text(Date().formatted(date: .abbreviated, time: .shortened))
-                    .font(.system(size: Theme.Font.xs))
+        // TimelineView re-renders every 30s so the "Updated Ns ago" stays
+        // fresh without having to publish a tick on the view model.
+        TimelineView(.periodic(from: .now, by: 30)) { context in
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(greeting)
+                        .font(Theme.TextStyle.title3Bold)
+                        .foregroundStyle(Theme.textPrimary)
+                    HStack(spacing: 4) {
+                        Text(Date().formatted(date: .abbreviated, time: .shortened))
+                        if let updatedAgo = updatedAgoText(now: context.date) {
+                            Text("·")
+                            Text(updatedAgo)
+                                .accessibilityLabel("Updated \(updatedAgo)")
+                        }
+                    }
+                    .font(Theme.TextStyle.caption)
                     .foregroundStyle(Theme.textMuted)
+                }
+                Spacer()
+                if viewModel.isLoading {
+                    ProgressView().tint(Theme.primary)
+                }
             }
-            Spacer()
-            if viewModel.isLoading {
-                ProgressView().tint(Theme.primary)
-            }
+            .padding(.horizontal, Theme.Spacing.xs)
+            .padding(.top, Theme.Spacing.xs)
         }
-        .padding(.horizontal, Theme.Spacing.xs)
-        .padding(.top, Theme.Spacing.xs)
+    }
+
+    /// Compact "Updated 12s ago" / "Updated 2m ago" string. Returns nil when
+    /// we don't yet have a refresh timestamp — header omits the "·" cleanly.
+    private func updatedAgoText(now: Date) -> String? {
+        guard let then = viewModel.lastRefreshedAt else { return nil }
+        let seconds = max(0, Int(now.timeIntervalSince(then)))
+        if seconds < 60 { return "updated \(seconds)s ago" }
+        let minutes = seconds / 60
+        if minutes < 60 { return "updated \(minutes)m ago" }
+        let hours = minutes / 60
+        return "updated \(hours)h ago"
     }
 
     private var greeting: String {
@@ -92,13 +158,13 @@ private struct DashboardContentView: View {
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(Theme.primary)
                     Text("Action center")
-                        .font(.system(size: Theme.Font.xs, weight: .semibold))
+                        .font(Theme.TextStyle.captionSemibold)
                         .foregroundStyle(Theme.textMuted)
                         .tracking(0.5)
                         .textCase(.uppercase)
                     Spacer()
                     Text("\(needsBob.count + fredWorking.count + healthIssues.count)")
-                        .font(.system(size: Theme.Font.xs, weight: .bold))
+                        .font(Theme.TextStyle.captionBold)
                         .foregroundStyle(Theme.textSecondary)
                 }
 
@@ -107,28 +173,32 @@ private struct DashboardContentView: View {
                     icon: "person.crop.circle.badge.exclamationmark",
                     color: Theme.warning,
                     items: needsBob.map { $0.title },
-                    empty: "No approvals waiting"
+                    empty: "No approvals waiting",
+                    emptyAction: ("Open approvals", { router.selectedTab = .review })
                 )
                 actionLane(
                     title: "Fred Working",
                     icon: "bolt.horizontal.circle",
                     color: Theme.primary,
                     items: fredWorking.map { $0.title },
-                    empty: "No active Fred tasks"
+                    empty: "No active Fred tasks",
+                    emptyAction: ("Ask Fred to start something", { router.selectedTab = .chat })
                 )
                 actionLane(
                     title: "Health",
                     icon: "waveform.path.ecg",
                     color: healthIssues.isEmpty ? Theme.success : Theme.error,
                     items: healthIssues,
-                    empty: "All transports healthy"
+                    empty: "All transports healthy",
+                    emptyAction: nil
                 )
                 actionLane(
                     title: "Recently Done",
                     icon: "checkmark.seal",
                     color: Theme.success,
                     items: recentlyDone.map { $0.title },
-                    empty: "Nothing completed recently"
+                    empty: "Nothing completed recently",
+                    emptyAction: ("Open tasks", { router.selectedTab = .tasks })
                 )
             }
         }
@@ -170,7 +240,8 @@ private struct DashboardContentView: View {
         icon: String,
         color: Color,
         items: [String],
-        empty: String
+        empty: String,
+        emptyAction: (label: String, action: () -> Void)? = nil
     ) -> some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
             HStack(spacing: Theme.Spacing.sm) {
@@ -178,22 +249,50 @@ private struct DashboardContentView: View {
                     .foregroundStyle(color)
                     .frame(width: 18)
                 Text(title)
-                    .font(.system(size: Theme.Font.sm, weight: .semibold))
+                    .font(Theme.TextStyle.footnoteSemibold)
                     .foregroundStyle(Theme.textPrimary)
                 Spacer()
                 Text(items.isEmpty ? "0" : "\(items.count)")
-                    .font(.system(size: Theme.Font.xs, weight: .bold))
+                    .font(Theme.TextStyle.captionBold)
                     .foregroundStyle(items.isEmpty ? Theme.textMuted : color)
             }
             if items.isEmpty {
-                Text(empty)
-                    .font(.system(size: Theme.Font.xs))
-                    .foregroundStyle(Theme.textMuted)
-                    .padding(.leading, 26)
+                if let emptyAction {
+                    Button {
+                        Haptics.tap()
+                        emptyAction.action()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text(empty)
+                                .font(Theme.TextStyle.caption)
+                                .foregroundStyle(Theme.textMuted)
+                            Text("·")
+                                .font(Theme.TextStyle.caption)
+                                .foregroundStyle(Theme.textMuted)
+                            Text(emptyAction.label)
+                                .font(Theme.TextStyle.captionSemibold)
+                                .foregroundStyle(Theme.primary)
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(Theme.primary)
+                        }
+                        .padding(.leading, 26)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .frame(minHeight: 36)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("\(empty). \(emptyAction.label).")
+                } else {
+                    Text(empty)
+                        .font(Theme.TextStyle.caption)
+                        .foregroundStyle(Theme.textMuted)
+                        .padding(.leading, 26)
+                }
             } else {
                 ForEach(items, id: \.self) { item in
                     Text(item)
-                        .font(.system(size: Theme.Font.xs))
+                        .font(Theme.TextStyle.caption)
                         .foregroundStyle(Theme.textSecondary)
                         .lineLimit(1)
                         .padding(.leading, 26)
@@ -260,7 +359,7 @@ private struct DashboardContentView: View {
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(teamTint)
                     Text("Team & providers")
-                        .font(.system(size: Theme.Font.xs, weight: .semibold))
+                        .font(Theme.TextStyle.captionSemibold)
                         .foregroundStyle(Theme.textMuted)
                         .tracking(0.5)
                         .textCase(.uppercase)
@@ -276,7 +375,7 @@ private struct DashboardContentView: View {
                     }
                 } else {
                     Text("Team status unavailable")
-                        .font(.system(size: Theme.Font.sm))
+                        .font(Theme.TextStyle.footnote)
                         .foregroundStyle(Theme.textMuted)
                 }
                 if !viewModel.snapshot.transports.isEmpty {
@@ -300,11 +399,11 @@ private struct DashboardContentView: View {
         HStack {
             Circle().fill(color).frame(width: 6, height: 6)
             Text(label)
-                .font(.system(size: Theme.Font.sm))
+                .font(Theme.TextStyle.footnote)
                 .foregroundStyle(Theme.textPrimary)
             Spacer()
             Text("\(value)")
-                .font(.system(size: Theme.Font.sm, weight: .semibold))
+                .font(Theme.TextStyle.footnoteSemibold)
                 .foregroundStyle(Theme.textSecondary)
         }
     }
@@ -315,11 +414,11 @@ private struct DashboardContentView: View {
                 .fill(transport.degraded ? Theme.warning : Theme.success)
                 .frame(width: 6, height: 6)
             Text(transport.transport.rawValue.capitalized)
-                .font(.system(size: Theme.Font.sm))
+                .font(Theme.TextStyle.footnote)
                 .foregroundStyle(Theme.textPrimary)
             Spacer()
             Text(transport.degraded ? "Degraded" : "OK")
-                .font(.system(size: Theme.Font.xs, weight: .semibold))
+                .font(Theme.TextStyle.captionSemibold)
                 .foregroundStyle(transport.degraded ? Theme.warning : Theme.success)
         }
     }
@@ -360,7 +459,7 @@ private struct DashboardContentView: View {
                             .font(.system(size: 16, weight: .semibold))
                             .foregroundStyle(Theme.primary)
                         Text("Recent research")
-                            .font(.system(size: Theme.Font.xs, weight: .semibold))
+                            .font(Theme.TextStyle.captionSemibold)
                             .foregroundStyle(Theme.textMuted)
                             .tracking(0.5)
                             .textCase(.uppercase)
@@ -371,18 +470,18 @@ private struct DashboardContentView: View {
                     }
                     if viewModel.snapshot.recentResearch.isEmpty {
                         Text("Nothing saved yet. Ask Fred to research something and save the findings.")
-                            .font(.system(size: Theme.Font.sm))
+                            .font(Theme.TextStyle.footnote)
                             .foregroundStyle(Theme.textMuted)
                     } else {
                         ForEach(viewModel.snapshot.recentResearch.prefix(3)) { item in
                             HStack(alignment: .firstTextBaseline) {
                                 Text(item.title)
-                                    .font(.system(size: Theme.Font.sm))
+                                    .font(Theme.TextStyle.footnote)
                                     .foregroundStyle(Theme.textPrimary)
                                     .lineLimit(1)
                                 Spacer()
                                 Text(item.savedAt.formatted(.relative(presentation: .numeric)))
-                                    .font(.system(size: Theme.Font.xs))
+                                    .font(Theme.TextStyle.caption)
                                     .foregroundStyle(Theme.textMuted)
                             }
                         }

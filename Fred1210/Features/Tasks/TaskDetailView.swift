@@ -22,7 +22,7 @@ struct TaskDetailView: View {
                 List {
                     Section {
                         Text(task.title)
-                            .font(.system(size: Theme.Font.lg, weight: .semibold))
+                            .font(Theme.TextStyle.bodySemibold)
                             .foregroundStyle(Theme.textPrimary)
                     }
                     .listRowBackground(Theme.bgCard)
@@ -30,7 +30,7 @@ struct TaskDetailView: View {
                     if let desc = task.description, !desc.isEmpty {
                         Section("Description") {
                             Text(desc)
-                                .font(.system(size: Theme.Font.md))
+                                .font(Theme.TextStyle.subheadline)
                                 .foregroundStyle(Theme.textPrimary)
                                 .textSelection(.enabled)
                         }
@@ -60,7 +60,7 @@ struct TaskDetailView: View {
                                 Label {
                                     Text(ghUrl.path.dropFirst())
                                         .foregroundStyle(Theme.primary)
-                                        .font(.system(size: Theme.Font.sm))
+                                        .font(Theme.TextStyle.footnote)
                                 } icon: {
                                     Image(systemName: "arrow.up.right.square")
                                         .foregroundStyle(Theme.primary)

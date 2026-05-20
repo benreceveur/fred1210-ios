@@ -97,7 +97,7 @@ struct NotificationSettingsView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
                     Text(subtitle)
-                        .font(.system(size: Theme.Font.xs))
+                        .font(Theme.TextStyle.caption)
                         .foregroundStyle(Theme.textMuted)
                 }
             } icon: {

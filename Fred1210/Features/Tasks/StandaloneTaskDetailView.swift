@@ -15,7 +15,7 @@ struct StandaloneTaskDetailView: View {
                     List {
                         Section {
                             Text(task.title)
-                                .font(.system(size: Theme.Font.lg, weight: .semibold))
+                                .font(Theme.TextStyle.bodySemibold)
                                 .foregroundStyle(Theme.textPrimary)
                         }
                         .listRowBackground(Theme.bgCard)
@@ -23,7 +23,7 @@ struct StandaloneTaskDetailView: View {
                         if let desc = task.description, !desc.isEmpty {
                             Section("Description") {
                                 Text(desc)
-                                    .font(.system(size: Theme.Font.md))
+                                    .font(Theme.TextStyle.subheadline)
                                     .foregroundStyle(Theme.textPrimary)
                                     .textSelection(.enabled)
                             }
@@ -57,7 +57,7 @@ struct StandaloneTaskDetailView: View {
                             .font(.system(size: 42))
                             .foregroundStyle(Theme.warning)
                         Text(errorMessage ?? "Task unavailable")
-                            .font(.system(size: Theme.Font.md))
+                            .font(Theme.TextStyle.subheadline)
                             .foregroundStyle(Theme.textMuted)
                             .multilineTextAlignment(.center)
                     }

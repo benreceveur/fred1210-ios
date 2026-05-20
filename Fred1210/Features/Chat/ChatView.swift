@@ -8,9 +8,36 @@ struct ChatView: View {
     }
 }
 
+/// PreferenceKey reporting the vertical distance between the last message and
+/// the bottom of the visible scroll viewport. Negative or near-zero means the
+/// user is parked at the bottom; large positive means they've scrolled up to
+/// read history and we must not yank them back.
+private struct ChatBottomOffsetKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
 private struct ChatContentView: View {
+    @EnvironmentObject var router: AppRouter
     @StateObject private var viewModel: ChatViewModel
     @FocusState private var inputFocused: Bool
+    /// True when the bottom of the conversation is inside (or very close to)
+    /// the viewport. Drives the auto-scroll decision and the "new messages"
+    /// pill visibility.
+    @State private var isAtBottom: Bool = true
+    /// Number of new messages that landed while the user was scrolled up.
+    /// Drives the badge on the "new messages" pill.
+    @State private var unreadWhileScrolledUp: Int = 0
+    /// Last observed message count — kept so the iOS 16 single-argument
+    /// `onChange` closure can compute the delta.
+    @State private var lastObservedMessageCount: Int = 0
+
+    /// Distance (in points) within which we consider the user "at the
+    /// bottom." Bigger than 0 so a tiny rubber-band offset doesn't make us
+    /// stop auto-scrolling.
+    private static let bottomStickThreshold: CGFloat = 120
 
     init(client: FredClient) {
         _viewModel = StateObject(wrappedValue: ChatViewModel(client: client))
@@ -19,6 +46,19 @@ private struct ChatContentView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
+                // Hidden keyboard-shortcut hook: ⌘K focuses the input from
+                // anywhere on the screen. Zero-sized so it doesn't take
+                // layout space; iOS still resolves the shortcut.
+                Button {
+                    inputFocused = true
+                } label: {
+                    EmptyView()
+                }
+                .keyboardShortcut("k", modifiers: .command)
+                .frame(width: 0, height: 0)
+                .opacity(0)
+                .accessibilityHidden(true)
+
                 if viewModel.isSending {
                     TurnProgressBanner(
                         phase: viewModel.turnPhase,
@@ -33,9 +73,32 @@ private struct ChatContentView: View {
             .background(Theme.bgDark)
             .navigationTitle("Fred")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbarBackground(Theme.bgCard, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
+            .toolbar {
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    Button {
+                        Haptics.tap()
+                        router.isShowingQuickCapture = true
+                    } label: {
+                        Image(systemName: "plus.circle")
+                            .accessibilityLabel("Quick capture task")
+                    }
+                    Button {
+                        router.isShowingVoiceSheet = true
+                    } label: {
+                        Image(systemName: "mic.fill")
+                            .accessibilityLabel("Ask Fred by voice")
+                            .accessibilityHint("Long-press to start recording immediately")
+                    }
+                    .simultaneousGesture(
+                        LongPressGesture(minimumDuration: 0.4).onEnded { _ in
+                            router.voiceAutoStart = true
+                            router.isShowingVoiceSheet = true
+                        }
+                    )
+                }
+            }
             // Toolbar search field — collapses to the magnifier when
             // empty, expands when tapped. Filters the loaded history
             // on-device; server pagination will come when /history gains
@@ -66,7 +129,7 @@ private struct ChatContentView: View {
                             .padding(.top, Theme.Spacing.xxl)
                     } else if viewModel.messages.isEmpty {
                         Text("Say hi to Fred.")
-                            .font(.system(size: Theme.Font.md))
+                            .font(Theme.TextStyle.subheadline)
                             .foregroundStyle(Theme.textMuted)
                             .frame(maxWidth: .infinity)
                             .padding(.top, Theme.Spacing.xxl)
@@ -74,7 +137,7 @@ private struct ChatContentView: View {
                         let groups = groupedByRole(viewModel.visibleMessages)
                         if groups.isEmpty && !viewModel.searchQuery.isEmpty {
                             Text("No messages match '\(viewModel.searchQuery)'.")
-                                .font(.system(size: Theme.Font.sm))
+                                .font(Theme.TextStyle.footnote)
                                 .foregroundStyle(Theme.textMuted)
                                 .frame(maxWidth: .infinity)
                                 .padding(.top, Theme.Spacing.xxl)
@@ -94,15 +157,81 @@ private struct ChatContentView: View {
                             ToolActivityStack(activities: viewModel.activeTools)
                                 .id("tool-activity")
                         }
+                        // Invisible probe pinned to the very end of the
+                        // content. Its frame minY relative to the scroll
+                        // view's bottom tells us whether the user is parked
+                        // at the bottom or has scrolled up to read history.
+                        Color.clear
+                            .frame(height: 1)
+                            .id("chat-bottom-anchor")
+                            .background(
+                                GeometryReader { proxy in
+                                    Color.clear.preference(
+                                        key: ChatBottomOffsetKey.self,
+                                        value: proxy.frame(in: .named("chatScroll")).maxY
+                                    )
+                                }
+                            )
                     }
                 }
                 .padding(Theme.Spacing.lg)
                 .padding(.bottom, Theme.Spacing.xs)
             }
-            .onChange(of: viewModel.messages.count) { count in
-                guard count > 0 else { return }
-                withAnimation(.easeOut(duration: 0.2)) {
-                    proxy.scrollTo(count - 1, anchor: .bottom)
+            .coordinateSpace(name: "chatScroll")
+            .overlay(alignment: .bottomTrailing) {
+                if !isAtBottom && unreadWhileScrolledUp > 0 {
+                    Button {
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            proxy.scrollTo("chat-bottom-anchor", anchor: .bottom)
+                        }
+                        unreadWhileScrolledUp = 0
+                    } label: {
+                        HStack(spacing: Theme.Spacing.xs) {
+                            Image(systemName: "arrow.down")
+                            Text("\(unreadWhileScrolledUp) new")
+                                .font(Theme.TextStyle.footnoteSemibold)
+                        }
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, Theme.Spacing.md)
+                        .padding(.vertical, Theme.Spacing.sm)
+                        .background(Theme.primary)
+                        .clipShape(Capsule())
+                        .shadow(color: Theme.primary.opacity(0.4), radius: 8, y: 3)
+                    }
+                    .padding(Theme.Spacing.md)
+                    .accessibilityLabel("Scroll to \(unreadWhileScrolledUp) new messages")
+                    .transition(.scale.combined(with: .opacity))
+                }
+            }
+            .onPreferenceChange(ChatBottomOffsetKey.self) { maxY in
+                // Read the bottom anchor's maxY in the scroll-view coordinate
+                // space. We don't know the viewport height here, but the key
+                // signal is "is the anchor on-screen?" — when it is, maxY
+                // becomes finite and small relative to the typical scroll
+                // height. Use a generous threshold instead of an exact
+                // viewport intersect.
+                let nowAtBottom = maxY > 0 && maxY < UIScreen.main.bounds.height + Self.bottomStickThreshold
+                if nowAtBottom != isAtBottom {
+                    isAtBottom = nowAtBottom
+                    if nowAtBottom { unreadWhileScrolledUp = 0 }
+                }
+            }
+            .onChange(of: viewModel.messages.count) { newCount in
+                let oldCount = lastObservedMessageCount
+                lastObservedMessageCount = newCount
+                guard newCount > 0 else { return }
+                let lastMessageIsUser = viewModel.messages.last?.role == .user
+                if isAtBottom || lastMessageIsUser {
+                    // Standard case: user is parked at the bottom or just sent
+                    // a message — follow along.
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        proxy.scrollTo("chat-bottom-anchor", anchor: .bottom)
+                    }
+                    unreadWhileScrolledUp = 0
+                } else if newCount > oldCount {
+                    // User is reading history. Don't yank them away — surface
+                    // the new messages via the bottom pill instead.
+                    unreadWhileScrolledUp += (newCount - oldCount)
                 }
             }
             .refreshable { await viewModel.loadHistory() }
@@ -131,22 +260,33 @@ private struct ChatContentView: View {
                 }
 
             Button {
+                Haptics.tap()
                 Task { await viewModel.send() }
             } label: {
                 if viewModel.isSending {
                     ProgressView()
-                        .tint(.white)
+                        .tint(isSendDisabled ? Theme.textMuted : .white)
                         .frame(width: 24, height: 24)
                 } else {
                     Image(systemName: "paperplane.fill")
                         .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(.white)
+                        // P2: contrast-safe disabled state. White paperplane
+                        // on translucent purple failed WCAG non-text contrast;
+                        // muted glyph on neutral input surface is well above
+                        // 3:1.
+                        .foregroundStyle(isSendDisabled ? Theme.textMuted : .white)
                         .frame(width: 24, height: 24)
                 }
             }
+            // ⌘↩ sends, even when focus is elsewhere on the chat view (e.g.
+            // user just tapped a tool chip). Pairs with ⌘K below to refocus
+            // the input from anywhere on iPad with a hardware keyboard.
+            .keyboardShortcut(.return, modifiers: .command)
+            .accessibilityHint("Send message. Keyboard shortcut: Command Return.")
             .frame(width: 44, height: 44)
-            .background(isSendDisabled ? Theme.primary.opacity(0.4) : Theme.primary)
+            .background(isSendDisabled ? Theme.bgInput : Theme.primary)
             .clipShape(Circle())
+            .accessibilityLabel("Send message")
             .disabled(isSendDisabled)
         }
         .padding(Theme.Spacing.lg)
@@ -201,11 +341,11 @@ private struct TurnProgressBanner: View {
                     .tint(Theme.primary)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(phase)
-                        .font(.system(size: Theme.Font.sm, weight: .semibold))
+                        .font(Theme.TextStyle.footnoteSemibold)
                         .foregroundStyle(Theme.textPrimary)
                         .lineLimit(1)
                     Text("\(toolCount) tool\(toolCount == 1 ? "" : "s") used\(elapsedText(now: context.date))")
-                        .font(.system(size: Theme.Font.xs))
+                        .font(Theme.TextStyle.caption)
                         .foregroundStyle(Theme.textMuted)
                 }
                 Spacer()
@@ -237,11 +377,11 @@ private struct ChatGroupView: View {
             if role == .user { Spacer(minLength: 40) }
             VStack(alignment: role == .user ? .trailing : .leading, spacing: 4) {
                 Text(label)
-                    .font(.system(size: Theme.Font.xs, weight: .semibold))
+                    .font(Theme.TextStyle.captionSemibold)
                     .foregroundStyle(Theme.textMuted)
                 ForEach(Array(messages.enumerated()), id: \.offset) { _, message in
                     HighlightedText(message.content, query: query)
-                        .font(.system(size: Theme.Font.md))
+                        .font(Theme.TextStyle.subheadline)
                         .foregroundStyle(Theme.textPrimary)
                         .padding(Theme.Spacing.md)
                         .background(bubbleColor)
@@ -296,7 +436,11 @@ private struct HighlightedText: View {
             if let attrStart = attributed.index(attributed.startIndex, offsetByCharacters: startOffset),
                let attrEnd = attributed.index(attributed.startIndex, offsetByCharacters: endOffset) {
                 let attrRange = attrStart..<attrEnd
-                attributed[attrRange].backgroundColor = Theme.primary.opacity(0.4)
+                // P1: bumped from 0.4 → 0.65 so the highlight passes WCAG
+                // non-text 3:1 contrast against both light and dark bubble
+                // surfaces. Foreground stays textPrimary so contrast against
+                // the highlight is driven by the highlight's own opacity.
+                attributed[attrRange].backgroundColor = Theme.primary.opacity(0.65)
                 attributed[attrRange].foregroundColor = Theme.textPrimary
             }
             searchStart = range.upperBound
@@ -327,18 +471,18 @@ private struct ToolActivityStack: View {
                         .frame(width: 18, height: 18)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(activity.name)
-                            .font(.system(size: Theme.Font.sm, weight: .semibold))
+                            .font(Theme.TextStyle.footnoteSemibold)
                             .foregroundStyle(Theme.textPrimary)
                         if !activity.argsPreview.isEmpty {
                             Text(activity.argsPreview)
-                                .font(.system(size: Theme.Font.xs))
+                                .font(Theme.TextStyle.caption)
                                 .foregroundStyle(Theme.textMuted)
                                 .lineLimit(1)
                         }
                         if case let .failed(_, errorPreview) = activity.state,
                            let preview = errorPreview, !preview.isEmpty {
                             Text(preview)
-                                .font(.system(size: Theme.Font.xs))
+                                .font(Theme.TextStyle.caption)
                                 .foregroundStyle(Theme.error)
                                 .lineLimit(2)
                         }
@@ -374,7 +518,7 @@ private struct ToolActivityStack: View {
             EmptyView()
         case .completed(let ms), .failed(let ms, _):
             Text("\(ms)ms")
-                .font(.system(size: Theme.Font.xs, weight: .semibold))
+                .font(Theme.TextStyle.captionSemibold)
                 .foregroundStyle(Theme.textMuted)
         }
     }

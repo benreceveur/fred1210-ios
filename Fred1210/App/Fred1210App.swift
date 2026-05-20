@@ -8,6 +8,9 @@ struct Fred1210App: App {
     @StateObject private var clientHolder: ClientHolder
     @StateObject private var pushManager: PushManager
     @StateObject private var router = AppRouter()
+    @StateObject private var reachability: FredReachability
+    @StateObject private var onboarding = OnboardingStore()
+    @Environment(\.scenePhase) private var scenePhase
 
     init() {
         let config = FredConfig()
@@ -16,7 +19,9 @@ struct Fred1210App: App {
         _clientHolder = StateObject(wrappedValue: holder)
         let push = PushManager(config: config)
         _pushManager = StateObject(wrappedValue: push)
+        _reachability = StateObject(wrappedValue: FredReachability(client: holder.client))
         AppDelegate.pushManager = push
+        AppDelegate.clientHolder = holder
 
         // Wire background refresh — iOS calls the handler every ~30 min
         // (at its discretion) to pre-fetch dashboard + tasks so the next
@@ -36,13 +41,33 @@ struct Fred1210App: App {
                 .environmentObject(clientHolder)
                 .environmentObject(pushManager)
                 .environmentObject(router)
-                .preferredColorScheme(.dark)
+                .environmentObject(reachability)
+                .environmentObject(onboarding)
+                // No `.preferredColorScheme(.dark)` — Theme.bg* / Theme.text*
+                // tokens adapt at the UIColor layer so the app follows the
+                // user's system Appearance choice. See docs/design/tokens.md.
+                .fullScreenCover(isPresented: .constant(!onboarding.isCompleted)) {
+                    OnboardingView()
+                        .environmentObject(fredConfig)
+                        .environmentObject(pushManager)
+                        .environmentObject(clientHolder)
+                        .environmentObject(onboarding)
+                }
                 .task {
-                    // Ask once per install; iOS remembers the answer so
-                    // subsequent launches are no-ops unless the user
-                    // changes it in system Settings.
-                    await pushManager.requestAuthorizationIfNeeded()
+                    // First-launch push prompt only fires inside the
+                    // onboarding flow now — but keep the BackgroundRefresh
+                    // scheduling here so it runs on every cold start.
                     BackgroundRefresh.scheduleNext()
+                }
+                .onAppear { reachability.start() }
+                .onChange(of: scenePhase) { phase in
+                    // Pause polling when backgrounded so we don't churn
+                    // battery on cellular. Resume on foreground.
+                    switch phase {
+                    case .active: reachability.start()
+                    case .background, .inactive: reachability.stop()
+                    @unknown default: break
+                    }
                 }
         }
     }

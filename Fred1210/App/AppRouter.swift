@@ -3,11 +3,15 @@ import Foundation
 @MainActor
 final class AppRouter: ObservableObject {
     enum Tab: Hashable {
-        case inbox
+        case dashboard
         case chat
         case review
         case tasks
         case settings
+        // `.inbox` retained for deep-link compatibility — route(.inbox) now
+        // surfaces the inbox inside the Dashboard tab's NavigationStack via
+        // `inboxRequested`.
+        case inbox
     }
 
     enum Sheet: Identifiable, Equatable {
@@ -15,6 +19,7 @@ final class AppRouter: ObservableObject {
         case recommendation(String)
         case research(String, String)
         case health
+        case inbox
 
         var id: String {
             switch self {
@@ -22,17 +27,35 @@ final class AppRouter: ObservableObject {
             case .recommendation(let id): return "recommendation-\(id)"
             case .research(let id, _): return "research-\(id)"
             case .health: return "health"
+            case .inbox: return "inbox"
             }
         }
     }
 
-    @Published var selectedTab: Tab = .inbox
+    @Published var selectedTab: Tab = .dashboard
     @Published var activeSheet: Sheet?
+    /// True while the global voice sheet is presented. Lives on the router so
+    /// any tab can trigger it (toolbar buttons, deep links, App Intents).
+    @Published var isShowingVoiceSheet: Bool = false
+    /// When true, VoiceView should auto-start recording on appear. Set by the
+    /// long-press handler on the mic toolbar button — tap = open sheet idle,
+    /// long-press = open sheet recording. Consumed exactly once: VoiceView
+    /// flips it back to false after triggering startHoldToTalk.
+    @Published var voiceAutoStart: Bool = false
+    /// True while the quick-capture sheet is presented. Lives on the router
+    /// so any tab can trigger it from its toolbar.
+    @Published var isShowingQuickCapture: Bool = false
 
     func route(_ destination: RouteDestination) {
         switch destination {
+        case .dashboard:
+            selectedTab = .dashboard
         case .inbox:
-            selectedTab = .inbox
+            // Inbox is no longer a dedicated tab — open it on top of
+            // Dashboard so the user lands in the same NavigationStack as
+            // the rest of their work.
+            selectedTab = .dashboard
+            activeSheet = .inbox
         case .chat:
             selectedTab = .chat
         case .review:
@@ -51,7 +74,7 @@ final class AppRouter: ObservableObject {
             selectedTab = .review
             activeSheet = .recommendation(id)
         case .research(let id, let title):
-            selectedTab = .inbox
+            selectedTab = .dashboard
             activeSheet = .research(id, title)
         }
     }
@@ -99,13 +122,18 @@ final class AppRouter: ObservableObject {
             route(.tasks)
         case "review":
             route(.review)
-        default:
+        case "inbox":
             route(.inbox)
+        case "dashboard", "home", "":
+            route(.dashboard)
+        default:
+            route(.dashboard)
         }
     }
 }
 
 enum RouteDestination: Equatable {
+    case dashboard
     case inbox
     case chat
     case review
@@ -118,12 +146,14 @@ enum RouteDestination: Equatable {
 
     init(screen: String) {
         switch screen.lowercased() {
+        case "dashboard", "home": self = .dashboard
+        case "inbox": self = .inbox
         case "chat": self = .chat
         case "review", "approval", "approvals", "repo": self = .review
         case "task", "tasks": self = .tasks
         case "setting", "settings": self = .settings
         case "health", "transport", "systemhealth": self = .health
-        default: self = .inbox
+        default: self = .dashboard
         }
     }
 }

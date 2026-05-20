@@ -136,7 +136,6 @@ private struct FredInboxContentView: View {
             .background(Theme.bgDark)
             .navigationTitle("Fred")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbarBackground(Theme.bgCard, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .refreshable { await viewModel.load() }
@@ -153,10 +152,10 @@ private struct FredInboxContentView: View {
         HStack(alignment: .firstTextBaseline) {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Fred Inbox")
-                    .font(.system(size: Theme.Font.xxl, weight: .bold))
+                    .font(Theme.TextStyle.titleBold)
                     .foregroundStyle(Theme.textPrimary)
                 Text(Date().formatted(date: .abbreviated, time: .shortened))
-                    .font(.system(size: Theme.Font.xs))
+                    .font(Theme.TextStyle.caption)
                     .foregroundStyle(Theme.textMuted)
             }
             Spacer()
@@ -178,10 +177,10 @@ private struct FredInboxContentView: View {
     private func attentionMetric(_ label: String, _ value: String, _ color: Color) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(value)
-                .font(.system(size: Theme.Font.xl, weight: .bold, design: .rounded))
+                .font(.system(.title3, design: .rounded).weight(.bold))
                 .foregroundStyle(color)
             Text(label)
-                .font(.system(size: Theme.Font.xs, weight: .semibold))
+                .font(Theme.TextStyle.captionSemibold)
                 .foregroundStyle(Theme.textMuted)
                 .textCase(.uppercase)
         }
@@ -209,18 +208,18 @@ private struct FredInboxContentView: View {
                     Image(systemName: icon)
                         .foregroundStyle(color)
                     Text(title)
-                        .font(.system(size: Theme.Font.xs, weight: .semibold))
+                        .font(Theme.TextStyle.captionSemibold)
                         .foregroundStyle(Theme.textMuted)
                         .tracking(0.5)
                         .textCase(.uppercase)
                     Spacer()
                     Text("\(count)")
-                        .font(.system(size: Theme.Font.xs, weight: .bold))
+                        .font(Theme.TextStyle.captionBold)
                         .foregroundStyle(count == 0 ? Theme.textMuted : color)
                 }
                 if count == 0 {
                     Text(empty)
-                        .font(.system(size: Theme.Font.sm))
+                        .font(Theme.TextStyle.footnote)
                         .foregroundStyle(Theme.textMuted)
                         .padding(.vertical, Theme.Spacing.xs)
                 } else {
@@ -244,12 +243,12 @@ private struct FredInboxContentView: View {
                     .frame(width: 18)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
-                        .font(.system(size: Theme.Font.sm, weight: .semibold))
+                        .font(Theme.TextStyle.footnoteSemibold)
                         .foregroundStyle(Theme.textPrimary)
                         .lineLimit(2)
                     if !detail.isEmpty {
                         Text(detail)
-                            .font(.system(size: Theme.Font.xs))
+                            .font(Theme.TextStyle.caption)
                             .foregroundStyle(Theme.textMuted)
                             .lineLimit(2)
                     }
@@ -260,6 +259,11 @@ private struct FredInboxContentView: View {
                     .foregroundStyle(Theme.textMuted)
             }
             .padding(Theme.Spacing.sm)
+            // Guarantee HIG-minimum 44pt tap target even when title + detail
+            // collapse to a single short line. The Dynamic Type body scale
+            // will exceed this naturally at AX sizes.
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
             .background(Theme.bgInput.opacity(0.55))
             .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm, style: .continuous))
         }

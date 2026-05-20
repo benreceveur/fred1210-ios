@@ -7,7 +7,12 @@ final class TaskListViewModel: ObservableObject {
     @Published private(set) var cacheAge: Date?
     @Published private(set) var pendingMutationCount = 0
     @Published private(set) var pendingCreateTitles: [String] = []
+    /// The most-recently deleted task — drives the undo snackbar. Cleared
+    /// 5s after the delete lands, or when the user taps undo (which also
+    /// fires a re-create via the create API).
+    @Published private(set) var undoTarget: Components.Schemas.Task?
     @Published var displayError: FredDisplayError?
+    private var undoExpireTask: Task<Void, Never>?
 
     private let client: FredClient
     private let cache: ResponseCache
@@ -153,6 +158,7 @@ final class TaskListViewModel: ObservableObject {
         if let index { tasks.remove(at: index) }
         do {
             try await client.deleteTask(id: task.id)
+            scheduleUndoExpiry(for: task)
         } catch {
             if shouldQueue(error) {
                 pendingDeleteIds.insert(task.id)
@@ -345,6 +351,78 @@ final class TaskListViewModel: ObservableObject {
         case .medium: return 2
         case .low: return 3
         case .none: return 4
+        }
+    }
+
+    // MARK: - Undo
+
+    /// Surface the deleted task as an undo target for 5s. Replaces any
+    /// in-flight undo (sequential deletes overwrite the snackbar — common
+    /// pattern: rapid swipe-deletes only need the last to be undoable, but
+    /// callers can opt into a stack later if needed).
+    private func scheduleUndoExpiry(for task: Components.Schemas.Task) {
+        undoExpireTask?.cancel()
+        undoTarget = task
+        undoExpireTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                self?.undoTarget = nil
+            }
+        }
+    }
+
+    /// Re-create the task that was just deleted. The server assigns a new
+    /// id — that's expected for undo semantics, and the user sees their
+    /// task reappear at the top of the list.
+    func undoDelete() async {
+        guard let task = undoTarget else { return }
+        undoExpireTask?.cancel()
+        undoTarget = nil
+        let request = Components.Schemas.CreateTaskRequest(
+            title: task.title,
+            description: task.description,
+            status: Self.toCreateStatus(task.status),
+            priority: Self.toCreatePriority(task.priority),
+            assignee: task.assignee,
+            tags: task.tags
+        )
+        do {
+            let recreated = try await client.createTask(request)
+            tasks.insert(recreated, at: 0)
+        } catch {
+            displayError = FredDisplayError.from(error, endpoint: "Undo delete", retry: nil)
+        }
+    }
+
+    /// Cancel the undo window manually — e.g. when the user starts another
+    /// destructive action and we want the snackbar gone right away.
+    func dismissUndo() {
+        undoExpireTask?.cancel()
+        undoTarget = nil
+    }
+
+    private static func toCreateStatus(
+        _ status: Components.Schemas.Task.StatusPayload
+    ) -> Components.Schemas.CreateTaskRequest.StatusPayload? {
+        switch status {
+        case .inbox: return .inbox
+        case .todo: return .todo
+        case .inProgress: return .inProgress
+        case .review: return .review
+        case .done: return .done
+        }
+    }
+
+    private static func toCreatePriority(
+        _ priority: Components.Schemas.Task.PriorityPayload
+    ) -> Components.Schemas.CreateTaskRequest.PriorityPayload? {
+        switch priority {
+        case .urgent: return .urgent
+        case .high: return .high
+        case .medium: return .medium
+        case .low: return .low
+        case .none: return Components.Schemas.CreateTaskRequest.PriorityPayload.none
         }
     }
 
