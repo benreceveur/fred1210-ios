@@ -94,7 +94,13 @@ platform :ios do
     if api_key
       require "tempfile"
       p8 = Tempfile.new(["AuthKey_#{ENV['APP_STORE_CONNECT_API_KEY_ID']}", ".p8"])
-      p8.write(ENV["APP_STORE_CONNECT_API_KEY_KEY"])
+      # Normalize before writing — `security find-generic-password -w`
+      # returns the value as a hex blob whenever it contains newlines
+      # (which any PEM does). Writing the raw hex to .p8 made
+      # xcodebuild's CryptoKit reject it with "invalidPEMDocument".
+      # `normalized_app_store_connect_key_content` already detects the
+      # hex-with-PEM-prefix shape and decodes it back to text.
+      p8.write(normalized_app_store_connect_key_content(ENV["APP_STORE_CONNECT_API_KEY_KEY"]))
       p8.close
       auth_xcargs = " -authenticationKeyID #{ENV['APP_STORE_CONNECT_API_KEY_ID'].shellescape}" \
                     " -authenticationKeyIssuerID #{ENV['APP_STORE_CONNECT_API_KEY_ISSUER_ID'].shellescape}" \
