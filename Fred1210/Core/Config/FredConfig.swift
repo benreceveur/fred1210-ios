@@ -84,6 +84,22 @@ final class FredConfig: ObservableObject {
         )
     }
 
+    /// Raw value stored in Keychain (what setHost wrote on last save).
+    /// Surfaced in the Settings diagnostics panel so the user can see
+    /// whether what they typed actually persisted, separate from the
+    /// in-memory `hostURL` (which may have been resolved through the
+    /// normalization fallback).
+    var storedHostRaw: String? {
+        (try? keychain.get(Self.hostKey)) ?? nil
+    }
+
+    /// Raw value in the shared iCloud key-value store. Diagnostics use
+    /// this to expose cross-device drift — when one device has a stale
+    /// or malformed URL the other devices may be picking up via sync.
+    var icloudHostRaw: String? {
+        NSUbiquitousKeyValueStore.default.string(forKey: Self.icloudHostKey)
+    }
+
     func setHost(_ urlString: String) throws {
         let normalized = Self.normalizedHost(urlString, repairPlaceholders: false)
         guard let url = URL(string: normalized), url.scheme != nil, url.host != nil else {
@@ -119,22 +135,71 @@ final class FredConfig: ObservableObject {
     }
 
     static func normalizedHost(_ raw: String?, repairPlaceholders: Bool = true) -> String {
-        let trimmed = (raw ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return productionDefaultHost }
+        let cleaned = stripPasteArtifacts((raw ?? "").trimmingCharacters(in: .whitespacesAndNewlines))
+        guard !cleaned.isEmpty else { return productionDefaultHost }
 
-        guard let url = URL(string: trimmed),
+        // Round 1 — try the input as the user typed it.
+        if let parsed = parseHost(cleaned) {
+            if repairPlaceholders, isKnownBadHost(parsed.host) {
+                return productionDefaultHost
+            }
+            return parsed.canonical
+        }
+
+        // Round 2 — auto-prepend https:// for bare hostnames like
+        // `bobs-mac-mini.tail5a2996.ts.net` so Slack/Mail paste
+        // failures (which strip the scheme) don't bounce off the
+        // strict RFC 3986 parser on iOS 17+.
+        if looksLikeBareHostname(cleaned),
+           let parsed = parseHost("https://\(cleaned)") {
+            if repairPlaceholders, isKnownBadHost(parsed.host) {
+                return productionDefaultHost
+            }
+            return parsed.canonical
+        }
+
+        return repairPlaceholders ? productionDefaultHost : cleaned
+    }
+
+    /// Strip the markup Slack/Mail wrap around URLs when shared. The
+    /// most common bad pastes:
+    ///   `<https://host>`           — Slack mrkdwn link with no label
+    ///   `<https://host|https://host>` — Slack mrkdwn link with label
+    private static func stripPasteArtifacts(_ s: String) -> String {
+        var value = s
+        if value.hasPrefix("<"), value.hasSuffix(">") {
+            value = String(value.dropFirst().dropLast())
+        }
+        if let pipeIndex = value.firstIndex(of: "|") {
+            value = String(value[..<pipeIndex])
+        }
+        return value.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Parse a candidate URL string and return its canonical form +
+    /// lowercased host. Returns nil if the input doesn't satisfy the
+    /// scheme/host requirements `setHost` enforces.
+    private static func parseHost(_ value: String) -> (canonical: String, host: String)? {
+        guard let url = URL(string: value),
               let scheme = url.scheme?.lowercased(),
               ["http", "https"].contains(scheme),
               let host = url.host?.lowercased(),
               !host.isEmpty else {
-            return repairPlaceholders ? productionDefaultHost : trimmed
+            return nil
         }
+        return (value, host)
+    }
 
-        if repairPlaceholders, isKnownBadHost(host) {
-            return productionDefaultHost
-        }
-
-        return trimmed
+    /// Heuristic for "user typed a hostname without a scheme". Matches
+    /// dotted alphanumeric labels separated by dots, with optional port
+    /// and path. Stays conservative — we only auto-prepend https:// for
+    /// values that pretty clearly are hostnames, not malformed URLs.
+    private static func looksLikeBareHostname(_ s: String) -> Bool {
+        guard !s.contains("://"), !s.contains(" ") else { return false }
+        let hostPart = s.split(separator: "/").first.map(String.init) ?? s
+        guard hostPart.contains(".") else { return false }
+        let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-:")
+        return hostPart.unicodeScalars.allSatisfy { allowed.contains($0) }
     }
 
     private static func isKnownBadHost(_ host: String) -> Bool {
