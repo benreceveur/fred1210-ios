@@ -290,7 +290,10 @@ struct OnboardingView: View {
         do {
             try fredConfig.setHost(hostDraft)
         } catch {
-            hostError = (error as? LocalizedError)?.errorDescription ?? "Invalid URL"
+            // setHost only throws for a genuinely malformed URL now (keychain
+            // persistence is best-effort and never throws here). Surface the
+            // real reason rather than a blanket "Invalid URL".
+            hostError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
             return false
         }
         probing = true

@@ -45,15 +45,16 @@ final class FredConfig: ObservableObject {
         // non-shared service keychain and copy it into the shared group.
         // After migration, all reads/writes go through the shared group so
         // future extensions see the same host the main app is using.
-        let shared = Keychain(service: Self.service, accessGroup: Self.accessGroup).synchronizable(false)
-        if (try? shared.get(Self.hostKey)) == nil {
-            let legacy = Keychain(service: Self.service).synchronizable(false)
-            let legacyValue = (try? legacy.get(Self.hostKey)) ?? nil
-            if let legacyValue, !legacyValue.isEmpty {
-                try? shared.set(legacyValue, key: Self.hostKey)
-            }
-        }
-        self.keychain = shared
+        // Use the app's default (always-entitled) keychain group. We must NOT
+        // pass `accessGroup: Self.accessGroup` here: that string contains the
+        // literal `$(AppIdentifierPrefix)` build variable, which Xcode only
+        // expands inside the entitlements plist — never in a Swift string. At
+        // runtime that unexpanded group matches no entitled access group, so
+        // every keychain write threw, and the Onboarding save mislabeled the
+        // failure as "Invalid URL". The keychain-access-groups entitlement
+        // still declares the shared group for future extensions; omitting the
+        // explicit group lets the system resolve the correct entitled group.
+        self.keychain = Keychain(service: Self.service).synchronizable(false)
 
         // If the Keychain has no host yet but iCloud KV does — usually
         // because the user already set up Fred on another device — adopt
@@ -105,13 +106,22 @@ final class FredConfig: ObservableObject {
         guard let url = URL(string: normalized), url.scheme != nil, url.host != nil else {
             throw FredConfigError.invalidURL
         }
-        try keychain.set(normalized, key: Self.hostKey)
+        // The URL is valid — commit it to in-memory state and iCloud KV first so
+        // the app works this session and persists across launches (init reads
+        // iCloud KV when the keychain is empty). Keychain persistence is
+        // best-effort: a keychain write error must NEVER surface as "invalid
+        // URL" or block the user, since iCloud KV already carries the value.
+        DispatchQueue.main.async { self.hostURL = url }
         // Mirror to iCloud KV so a fresh install on another device picks
         // up this URL on first launch. 5kb cap is well above any URL.
         let kv = NSUbiquitousKeyValueStore.default
         kv.set(normalized, forKey: Self.icloudHostKey)
         kv.synchronize()
-        DispatchQueue.main.async { self.hostURL = url }
+        do {
+            try keychain.set(normalized, key: Self.hostKey)
+        } catch {
+            NSLog("[FredConfig] Keychain persist failed (continuing via iCloud KV): \(error)")
+        }
     }
 
     @objc private func handleICloudHostChange(_ notification: Notification) {
