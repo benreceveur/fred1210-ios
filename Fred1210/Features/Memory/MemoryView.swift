@@ -19,7 +19,7 @@ struct MemoryView: View {
                         .font(.system(size: 48))
                         .foregroundStyle(Theme.primary)
                     Text("Memory is biometric-gated")
-                        .font(.system(size: Theme.Font.md))
+                        .font(Theme.TextStyle.subheadline)
                         .foregroundStyle(Theme.textMuted)
                     Button("Unlock") {
                         Task {
@@ -71,10 +71,10 @@ struct MemoryView: View {
                         ForEach(grouped[category] ?? []) { fact in
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(fact.fact)
-                                    .font(.system(size: Theme.Font.md))
+                                    .font(Theme.TextStyle.subheadline)
                                     .foregroundStyle(Theme.textPrimary)
                                 Text(relativeAge(fact.timestamp))
-                                    .font(.system(size: Theme.Font.xs))
+                                    .font(Theme.TextStyle.caption)
                                     .foregroundStyle(Theme.textMuted)
                             }
                             .listRowBackground(Theme.bgCard)

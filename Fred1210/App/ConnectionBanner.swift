@@ -6,7 +6,7 @@ struct ConnectionBanner: View {
             Image(systemName: "wifi.slash")
                 .foregroundStyle(Theme.warning)
             Text("Offline — reconnect to Tailscale")
-                .font(.system(size: Theme.Font.sm, weight: .semibold))
+                .font(Theme.TextStyle.footnoteSemibold)
                 .foregroundStyle(Theme.textPrimary)
         }
         .frame(maxWidth: .infinity)

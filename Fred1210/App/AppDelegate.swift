@@ -9,11 +9,18 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
     /// shared push manager without @EnvironmentObject plumbing.
     static var pushManager: PushManager?
 
+    /// Holder for the FredClient so action handlers can call the approval /
+    /// task APIs without needing the in-app router. Set by Fred1210App.
+    static var clientHolder: ClientHolder?
+
     func application(
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
         UNUserNotificationCenter.current().delegate = self
+        // Register actionable categories so push notifications can show
+        // Approve / Dismiss / Mark done buttons without opening the app.
+        Self.pushManager?.registerCategories()
         return true
     }
 
@@ -43,19 +50,96 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         completionHandler([.banner, .sound, .badge])
     }
 
-    // Tap-to-open: iOS later we'll route to a specific tab based on
-    // notification data. Server pushes can include keys such as
-    // `taskId`, `recommendationId`, `researchId`, `screen`, or `kind`.
+    // Tap-to-open OR inline action: server pushes can include keys such as
+    // `taskId`, `recommendationId`, `researchId`, `screen`, `kind`. When the
+    // notification's category is one of the actionable ones (see
+    // `PushManager.CategoryID`) and the response carries an `actionIdentifier`
+    // beyond the default tap, we forward to the matching API on the FredClient
+    // and skip routing into the app.
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
-        NotificationCenter.default.post(
-            name: .fredRouteRequested,
-            object: nil,
-            userInfo: response.notification.request.content.userInfo
-        )
-        completionHandler()
+        let info = response.notification.request.content.userInfo
+        let action = response.actionIdentifier
+
+        switch action {
+        case PushManager.ActionID.approve.rawValue:
+            Task {
+                await Self.handleApprovalAction(approve: true, userInfo: info)
+                completionHandler()
+            }
+            return
+        case PushManager.ActionID.dismiss.rawValue:
+            Task {
+                await Self.handleApprovalAction(approve: false, userInfo: info)
+                completionHandler()
+            }
+            return
+        case PushManager.ActionID.complete.rawValue:
+            Task {
+                await Self.handleTaskComplete(userInfo: info)
+                completionHandler()
+            }
+            return
+        default:
+            // Default tap (or unknown action): open the relevant screen in
+            // the app via the existing route-by-userInfo notification.
+            NotificationCenter.default.post(
+                name: .fredRouteRequested,
+                object: nil,
+                userInfo: info
+            )
+            completionHandler()
+        }
+    }
+
+    private static func handleApprovalAction(
+        approve: Bool,
+        userInfo: [AnyHashable: Any]
+    ) async {
+        guard let id = stringValue(in: userInfo, keys: ["recommendationId", "recommendation_id"]),
+              let client = await clientHolder?.client else { return }
+        do {
+            _ = try await client.resolveRepoRecommendation(
+                id: id,
+                action: approve ? "approve" : "dismiss"
+            )
+        } catch {
+            // Inline-action failure: surface as a follow-up notification
+            // through the existing route-request channel so the user lands
+            // in the in-app approval screen and can retry.
+            NotificationCenter.default.post(
+                name: .fredRouteRequested,
+                object: nil,
+                userInfo: userInfo
+            )
+        }
+    }
+
+    private static func handleTaskComplete(userInfo: [AnyHashable: Any]) async {
+        guard let id = stringValue(in: userInfo, keys: ["taskId", "task_id"]),
+              let client = await clientHolder?.client else { return }
+        do {
+            try await client.updateTaskRaw(id: id, payload: ["status": "done"])
+        } catch {
+            NotificationCenter.default.post(
+                name: .fredRouteRequested,
+                object: nil,
+                userInfo: userInfo
+            )
+        }
+    }
+
+    private static func stringValue(
+        in userInfo: [AnyHashable: Any],
+        keys: [String]
+    ) -> String? {
+        for key in keys {
+            if let value = userInfo[key] as? String, !value.isEmpty { return value }
+            if let value = userInfo[key] { return String(describing: value) }
+        }
+        return nil
     }
 }

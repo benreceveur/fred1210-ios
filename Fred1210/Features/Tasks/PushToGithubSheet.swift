@@ -19,7 +19,7 @@ struct PushToGithubSheet: View {
             List {
                 Section("Push this task upstream as a new GitHub issue") {
                     Text(task.title)
-                        .font(.system(size: Theme.Font.md, weight: .semibold))
+                        .font(Theme.TextStyle.subheadlineSemibold)
                         .foregroundStyle(Theme.textPrimary)
                 }
                 .listRowBackground(Theme.bgCard)

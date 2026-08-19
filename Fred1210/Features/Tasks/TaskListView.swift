@@ -46,7 +46,9 @@ private struct TaskListContentView: View {
             .listRowBackground(Theme.bgCard)
             .swipeActions(edge: .leading, allowsFullSwipe: true) {
                 Button {
-                    Task { await viewModel.setStatus(task, to: task.status == .done ? .todo : .done) }
+                    let target: Components.Schemas.UpdateTaskRequest.StatusPayload = task.status == .done ? .todo : .done
+                    if target == .done { Haptics.success() } else { Haptics.tap() }
+                    Task { await viewModel.setStatus(task, to: target) }
                 } label: {
                     Label(task.status == .done ? "Reopen" : "Done",
                           systemImage: task.status == .done ? "arrow.uturn.backward.circle" : "checkmark.circle.fill")
@@ -55,6 +57,7 @@ private struct TaskListContentView: View {
             }
             .swipeActions(edge: .leading, allowsFullSwipe: false) {
                 Button {
+                    Haptics.tap()
                     Task { await viewModel.toggleStatus(task) }
                 } label: {
                     Label("Advance", systemImage: "arrow.right.circle")
@@ -155,7 +158,7 @@ private struct TaskListContentView: View {
                             .font(.system(size: 60))
                             .foregroundStyle(Theme.textMuted)
                         Text("No tasks yet")
-                            .font(.system(size: Theme.Font.md))
+                            .font(Theme.TextStyle.subheadline)
                             .foregroundStyle(Theme.textMuted)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -167,7 +170,7 @@ private struct TaskListContentView: View {
                                     Image(systemName: "clock.arrow.circlepath")
                                         .foregroundStyle(Theme.warning)
                                     Text("\(viewModel.pendingMutationCount) change\(viewModel.pendingMutationCount == 1 ? "" : "s") waiting to sync")
-                                        .font(.system(size: Theme.Font.sm, weight: .semibold))
+                                        .font(Theme.TextStyle.footnoteSemibold)
                                         .foregroundStyle(Theme.textPrimary)
                                     Spacer()
                                 }
@@ -177,7 +180,7 @@ private struct TaskListContentView: View {
                                         Image(systemName: "plus.circle")
                                             .foregroundStyle(Theme.primary)
                                         Text(title)
-                                            .font(.system(size: Theme.Font.sm))
+                                            .font(Theme.TextStyle.footnote)
                                             .foregroundStyle(Theme.textSecondary)
                                             .lineLimit(1)
                                     }
@@ -195,7 +198,7 @@ private struct TaskListContentView: View {
                                 Image(systemName: "checkmark.seal.fill")
                                     .foregroundStyle(Theme.success)
                                 Text("All caught up — no open tasks")
-                                    .font(.system(size: Theme.Font.md))
+                                    .font(Theme.TextStyle.subheadline)
                                     .foregroundStyle(Theme.textMuted)
                             }
                             .listRowBackground(Theme.bgCard)
@@ -222,7 +225,7 @@ private struct TaskListContentView: View {
                                         Image(systemName: showCompleted ? "chevron.down" : "chevron.right")
                                             .font(.system(size: 11, weight: .bold))
                                         Text("Completed · \(completedTasks.count)")
-                                            .font(.system(size: Theme.Font.xs, weight: .semibold))
+                                            .font(Theme.TextStyle.captionSemibold)
                                         Spacer()
                                     }
                                     .foregroundStyle(Theme.textMuted)
@@ -237,20 +240,37 @@ private struct TaskListContentView: View {
                 }
             }
             .background(Theme.bgDark)
+            .overlay(alignment: .bottom) {
+                if let target = viewModel.undoTarget {
+                    UndoSnackbar(
+                        title: "Deleted \"\(target.title)\"",
+                        onUndo: {
+                            Haptics.tap()
+                            Task { await viewModel.undoDelete() }
+                        },
+                        onDismiss: { viewModel.dismissUndo() }
+                    )
+                    .padding(.horizontal, Theme.Spacing.lg)
+                    .padding(.bottom, Theme.Spacing.md)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
+            .animation(.easeOut(duration: 0.2), value: viewModel.undoTarget?.id)
             .refreshable { await viewModel.refresh() }
             .navigationTitle("Tasks")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbarBackground(Theme.bgCard, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
+                        Haptics.tap()
                         showingCreateSheet = true
                     } label: {
                         Image(systemName: "plus")
                             .font(.system(size: 17, weight: .semibold))
                             .foregroundStyle(Theme.primary)
+                            .accessibilityLabel("New task")
                     }
                 }
             }
@@ -321,22 +341,22 @@ private struct TaskRow: View {
             }
             VStack(alignment: .leading, spacing: 4) {
                 Text(task.title)
-                    .font(.system(size: Theme.Font.md, weight: .semibold))
+                    .font(Theme.TextStyle.subheadlineSemibold)
                     .foregroundStyle(effectiveStatus == .done ? Theme.textMuted : Theme.textPrimary)
                     .strikethrough(effectiveStatus == .done, color: Theme.textMuted)
                 HStack(spacing: Theme.Spacing.sm) {
                     Text(effectiveStatus.rawValue.replacingOccurrences(of: "-", with: " ").uppercased())
-                        .font(.system(size: Theme.Font.xs, weight: .semibold))
+                        .font(Theme.TextStyle.captionSemibold)
                         .foregroundStyle(statusColor)
                     if isPending {
                         Label("Pending", systemImage: "clock")
-                            .font(.system(size: Theme.Font.xs, weight: .semibold))
+                            .font(Theme.TextStyle.captionSemibold)
                             .foregroundStyle(Theme.warning)
                             .labelStyle(.titleAndIcon)
                     }
                     if let tags = task.tags, !tags.isEmpty {
                         Text("· \(tags.joined(separator: ", "))")
-                            .font(.system(size: Theme.Font.xs))
+                            .font(Theme.TextStyle.caption)
                             .foregroundStyle(Theme.textMuted)
                             .lineLimit(1)
                     }
@@ -344,7 +364,7 @@ private struct TaskRow: View {
             }
             Spacer()
             Text(effectivePriority.rawValue.uppercased())
-                .font(.system(size: Theme.Font.xs, weight: .bold))
+                .font(Theme.TextStyle.captionBold)
                 .foregroundStyle(priorityColor)
         }
         .padding(.vertical, 4)

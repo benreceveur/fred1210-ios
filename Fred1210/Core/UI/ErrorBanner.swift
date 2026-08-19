@@ -16,15 +16,15 @@ struct ErrorBanner: View {
     var body: some View {
         HStack(alignment: .top, spacing: Theme.Spacing.md) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: Theme.Font.lg))
+                .font(Theme.TextStyle.body)
                 .foregroundStyle(Theme.error)
 
             VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
                 Text(error.title)
-                    .font(.system(size: Theme.Font.sm, weight: .semibold))
+                    .font(Theme.TextStyle.footnoteSemibold)
                     .foregroundStyle(Theme.textPrimary)
                 Text(error.body)
-                    .font(.system(size: Theme.Font.xs))
+                    .font(Theme.TextStyle.caption)
                     .foregroundStyle(Theme.textSecondary)
                     .lineLimit(3)
 
@@ -45,14 +45,14 @@ struct ErrorBanner: View {
                                 }
                                 Text("Retry")
                             }
-                            .font(.system(size: Theme.Font.xs, weight: .semibold))
+                            .font(Theme.TextStyle.captionSemibold)
                         }
                         .disabled(isRetrying)
                         .tint(Theme.primary)
                     }
 
                     Button("Dismiss", action: onDismiss)
-                        .font(.system(size: Theme.Font.xs))
+                        .font(Theme.TextStyle.caption)
                         .foregroundStyle(Theme.textMuted)
                 }
                 .padding(.top, 2)

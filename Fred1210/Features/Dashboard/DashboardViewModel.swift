@@ -73,6 +73,7 @@ struct DashboardSnapshot {
 final class DashboardViewModel: ObservableObject {
     @Published private(set) var snapshot = DashboardSnapshot.empty
     @Published private(set) var isLoading = false
+    @Published private(set) var lastRefreshedAt: Date?
     @Published var displayError: FredDisplayError?
 
     private let client: FredClient
@@ -99,6 +100,7 @@ final class DashboardViewModel: ObservableObject {
                 dashboardTask, statusTask, transportTask, researchTask
             )
             snapshot = normalize(dashboard: dashboard, status: status, transports: transports, research: research)
+            lastRefreshedAt = Date()
             displayError = nil
         } catch {
             displayError = FredDisplayError.from(

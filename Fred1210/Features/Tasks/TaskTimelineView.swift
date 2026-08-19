@@ -66,10 +66,10 @@ struct TaskTimelineView: View {
                 .frame(width: 20)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.system(size: Theme.Font.sm, weight: .semibold))
+                    .font(Theme.TextStyle.footnoteSemibold)
                     .foregroundStyle(Theme.textPrimary)
                 Text(detail)
-                    .font(.system(size: Theme.Font.xs))
+                    .font(Theme.TextStyle.caption)
                     .foregroundStyle(Theme.textMuted)
             }
         }

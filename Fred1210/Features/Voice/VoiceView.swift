@@ -9,6 +9,7 @@ struct VoiceView: View {
 }
 
 private struct VoiceContentView: View {
+    @EnvironmentObject var router: AppRouter
     @StateObject private var viewModel: VoiceViewModel
 
     init(client: FredClient) {
@@ -32,12 +33,21 @@ private struct VoiceContentView: View {
             .background(Theme.bgDark)
             .navigationTitle("Voice")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbarBackground(Theme.bgCard, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .safeAreaInset(edge: .top, spacing: 0) {
                 if let error = viewModel.displayError {
                     ErrorBanner(error: error, onDismiss: viewModel.clearError)
+                }
+            }
+            .task {
+                // Long-press path: caller opened the sheet via gesture with
+                // voiceAutoStart=true. Fire recording immediately and clear
+                // the flag so future "tap to open" presentations stay idle.
+                if router.voiceAutoStart {
+                    router.voiceAutoStart = false
+                    Haptics.confirm()
+                    await viewModel.startHoldToTalk()
                 }
             }
         }
@@ -50,10 +60,10 @@ private struct VoiceContentView: View {
                 if !viewModel.transcript.isEmpty {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("YOU")
-                            .font(.system(size: Theme.Font.xs, weight: .bold))
+                            .font(Theme.TextStyle.captionBold)
                             .foregroundStyle(Theme.textMuted)
                         Text(viewModel.transcript)
-                            .font(.system(size: Theme.Font.md))
+                            .font(Theme.TextStyle.subheadline)
                             .foregroundStyle(Theme.textSecondary)
                             .textSelection(.enabled)
                     }
@@ -61,10 +71,10 @@ private struct VoiceContentView: View {
                 if !viewModel.responseText.isEmpty {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("FRED")
-                            .font(.system(size: Theme.Font.xs, weight: .bold))
+                            .font(Theme.TextStyle.captionBold)
                             .foregroundStyle(Theme.primary)
                         Text(viewModel.responseText)
-                            .font(.system(size: Theme.Font.md))
+                            .font(Theme.TextStyle.subheadline)
                             .foregroundStyle(Theme.textPrimary)
                             .textSelection(.enabled)
                     }
@@ -93,7 +103,7 @@ private struct VoiceContentView: View {
                         Image(systemName: "bolt.circle")
                             .foregroundStyle(Theme.primary)
                         Text(command)
-                            .font(.system(size: Theme.Font.sm, weight: .semibold))
+                            .font(Theme.TextStyle.footnoteSemibold)
                             .foregroundStyle(Theme.textPrimary)
                         Spacer()
                     }
@@ -126,7 +136,7 @@ private struct VoiceContentView: View {
                 .font(.system(size: 9, weight: .semibold))
                 .foregroundStyle(Theme.textMuted)
             Text(ms < 1000 ? "\(ms)ms" : String(format: "%.1fs", Double(ms) / 1000))
-                .font(.system(size: Theme.Font.xs, weight: .bold))
+                .font(Theme.TextStyle.captionBold)
                 .foregroundStyle(highlight ? Theme.primary : Theme.textSecondary)
         }
     }
@@ -165,7 +175,7 @@ private struct VoiceContentView: View {
             )
 
             Text(stateText)
-                .font(.system(size: Theme.Font.md))
+                .font(Theme.TextStyle.subheadline)
                 .foregroundStyle(Theme.textSecondary)
         }
         .padding(.bottom, 60)

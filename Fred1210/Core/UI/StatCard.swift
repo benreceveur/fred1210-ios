@@ -38,12 +38,12 @@ struct StatCard: View {
                     .minimumScaleFactor(0.6)
                     .lineLimit(1)
                 Text(label.uppercased())
-                    .font(.system(size: Theme.Font.xs, weight: .semibold))
+                    .font(Theme.TextStyle.captionSemibold)
                     .foregroundStyle(Theme.textMuted)
                     .tracking(0.5)
                 if let hint {
                     Text(hint)
-                        .font(.system(size: Theme.Font.xs))
+                        .font(Theme.TextStyle.caption)
                         .foregroundStyle(Theme.textSecondary)
                         .lineLimit(2)
                 }

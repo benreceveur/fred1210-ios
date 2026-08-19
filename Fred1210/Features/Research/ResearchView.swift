@@ -45,17 +45,17 @@ struct ResearchView: View {
                         HStack(alignment: .top, spacing: Theme.Spacing.sm) {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(item.title)
-                                    .font(.system(size: Theme.Font.md, weight: .semibold))
+                                    .font(Theme.TextStyle.subheadlineSemibold)
                                     .foregroundStyle(Theme.textPrimary)
                                     .lineLimit(2)
                                 Text(item.savedAt.formatted(.relative(presentation: .numeric)))
-                                    .font(.system(size: Theme.Font.xs))
+                                    .font(Theme.TextStyle.caption)
                                     .foregroundStyle(Theme.textMuted)
                             }
                             Spacer()
                             if let decision = reviewed[item.id]?.decision {
                                 Text(decision.rawValue.uppercased())
-                                    .font(.system(size: Theme.Font.xs, weight: .bold))
+                                    .font(Theme.TextStyle.captionBold)
                                     .foregroundStyle(Theme.success)
                             }
                         }
@@ -69,7 +69,6 @@ struct ResearchView: View {
         .background(Theme.bgDark)
         .navigationTitle("Research")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbarColorScheme(.dark, for: .navigationBar)
         .toolbarBackground(Theme.bgCard, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
         .refreshable { await load() }
@@ -106,10 +105,10 @@ struct ResearchDetailView: View {
             VStack(alignment: .leading, spacing: Theme.Spacing.md) {
                 if let detail {
                     Text(detail.title)
-                        .font(.system(size: Theme.Font.xl, weight: .bold))
+                        .font(Theme.TextStyle.title3Bold)
                         .foregroundStyle(Theme.textPrimary)
                     Text(relativeAge(detail.savedAt))
-                        .font(.system(size: Theme.Font.xs))
+                        .font(Theme.TextStyle.caption)
                         .foregroundStyle(Theme.textMuted)
                     decisionControls(for: detail)
                     decisionSummary(for: detail)
@@ -122,12 +121,12 @@ struct ResearchDetailView: View {
                         options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
                     ) {
                         Text(attributed)
-                            .font(.system(size: Theme.Font.md))
+                            .font(Theme.TextStyle.subheadline)
                             .foregroundStyle(Theme.textPrimary)
                             .textSelection(.enabled)
                     } else {
                         Text(detail.content)
-                            .font(.system(size: Theme.Font.md))
+                            .font(Theme.TextStyle.subheadline)
                             .foregroundStyle(Theme.textPrimary)
                             .textSelection(.enabled)
                     }
@@ -145,7 +144,6 @@ struct ResearchDetailView: View {
         .background(Theme.bgDark)
         .navigationTitle(fallbackTitle)
         .navigationBarTitleDisplayMode(.inline)
-        .toolbarColorScheme(.dark, for: .navigationBar)
         .toolbarBackground(Theme.bgCard, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
         .toolbar {
@@ -181,11 +179,11 @@ struct ResearchDetailView: View {
             if !bullets.isEmpty {
                 VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
                     Label("Key points", systemImage: "list.bullet.rectangle")
-                        .font(.system(size: Theme.Font.xs, weight: .bold))
+                        .font(Theme.TextStyle.captionBold)
                         .foregroundStyle(Theme.textMuted)
                     ForEach(Array(bullets), id: \.self) { bullet in
                         Text("• \(bullet)")
-                            .font(.system(size: Theme.Font.sm))
+                            .font(Theme.TextStyle.footnote)
                             .foregroundStyle(Theme.textSecondary)
                     }
                 }
@@ -198,12 +196,12 @@ struct ResearchDetailView: View {
             if !links.isEmpty {
                 VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
                     Label("Sources", systemImage: "link")
-                        .font(.system(size: Theme.Font.xs, weight: .bold))
+                        .font(Theme.TextStyle.captionBold)
                         .foregroundStyle(Theme.textMuted)
                     ForEach(Array(links), id: \.self) { link in
                         if let url = URL(string: link) {
                             Link(link, destination: url)
-                                .font(.system(size: Theme.Font.xs))
+                                .font(Theme.TextStyle.caption)
                                 .foregroundStyle(Theme.info)
                                 .lineLimit(1)
                         }
@@ -225,7 +223,7 @@ struct ResearchDetailView: View {
             }
             if let decision {
                 Label("Marked \(decision.rawValue)", systemImage: "checkmark.circle.fill")
-                    .font(.system(size: Theme.Font.xs, weight: .semibold))
+                    .font(Theme.TextStyle.captionSemibold)
                     .foregroundStyle(Theme.success)
             }
         }
@@ -241,7 +239,7 @@ struct ResearchDetailView: View {
             Task { await mark(detail, as: value) }
         } label: {
             Text(title)
-                .font(.system(size: Theme.Font.xs, weight: .bold))
+                .font(Theme.TextStyle.captionBold)
                 .frame(maxWidth: .infinity)
         }
         .buttonStyle(.bordered)
@@ -251,10 +249,10 @@ struct ResearchDetailView: View {
     private func summaryBlock(title: String, icon: String, color: Color, body: String) -> some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
             Label(title, systemImage: icon)
-                .font(.system(size: Theme.Font.xs, weight: .bold))
+                .font(Theme.TextStyle.captionBold)
                 .foregroundStyle(color)
             Text(body)
-                .font(.system(size: Theme.Font.sm))
+                .font(Theme.TextStyle.footnote)
                 .foregroundStyle(Theme.textPrimary)
                 .lineLimit(4)
         }

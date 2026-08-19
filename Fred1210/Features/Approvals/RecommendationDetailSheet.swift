@@ -48,13 +48,13 @@ struct RecommendationDetailSheet: View {
         Card {
             VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
                 Text(item.target.label)
-                    .font(.system(size: Theme.Font.xl, weight: .bold))
+                    .font(Theme.TextStyle.title3Bold)
                     .foregroundStyle(Theme.textPrimary)
                 Text("\(item.target.owner)/\(item.target.repo)")
-                    .font(.system(size: Theme.Font.sm))
+                    .font(Theme.TextStyle.footnote)
                     .foregroundStyle(Theme.textMuted)
                 Text(item.posture.uppercased())
-                    .font(.system(size: Theme.Font.xs, weight: .bold))
+                    .font(Theme.TextStyle.captionBold)
                     .foregroundStyle(postureColor(item.posture))
             }
         }
@@ -64,7 +64,7 @@ struct RecommendationDetailSheet: View {
         Card {
             VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
                 Text("Thread")
-                    .font(.system(size: Theme.Font.xs, weight: .semibold))
+                    .font(Theme.TextStyle.captionSemibold)
                     .foregroundStyle(Theme.textMuted)
                     .tracking(0.5)
                     .textCase(.uppercase)
@@ -85,7 +85,7 @@ struct RecommendationDetailSheet: View {
         Card {
             VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
                 Text("Evidence")
-                    .font(.system(size: Theme.Font.xs, weight: .semibold))
+                    .font(Theme.TextStyle.captionSemibold)
                     .foregroundStyle(Theme.textMuted)
                     .tracking(0.5)
                     .textCase(.uppercase)
@@ -131,10 +131,10 @@ struct RecommendationDetailSheet: View {
                 .frame(width: 20)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.system(size: Theme.Font.sm, weight: .semibold))
+                    .font(Theme.TextStyle.footnoteSemibold)
                     .foregroundStyle(Theme.textPrimary)
                 Text(detail)
-                    .font(.system(size: Theme.Font.xs))
+                    .font(Theme.TextStyle.caption)
                     .foregroundStyle(Theme.textMuted)
             }
         }

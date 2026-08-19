@@ -19,11 +19,11 @@ struct EmptyState: View {
                 .font(.system(size: 32))
                 .foregroundStyle(Theme.textMuted)
             Text(title)
-                .font(.system(size: Theme.Font.md, weight: .semibold))
+                .font(Theme.TextStyle.subheadlineSemibold)
                 .foregroundStyle(Theme.textPrimary)
             if let detail {
                 Text(detail)
-                    .font(.system(size: Theme.Font.sm))
+                    .font(Theme.TextStyle.footnote)
                     .foregroundStyle(Theme.textMuted)
                     .multilineTextAlignment(.center)
             }

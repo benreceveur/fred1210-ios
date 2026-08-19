@@ -31,7 +31,6 @@ private struct ApprovalsContentView: View {
             .background(Theme.bgDark)
             .navigationTitle("Review")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbarBackground(Theme.bgCard, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
@@ -67,10 +66,10 @@ private struct ApprovalsContentView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
             Text("Fred recommendations")
-                .font(.system(size: Theme.Font.xl, weight: .bold))
+                .font(Theme.TextStyle.title3Bold)
                 .foregroundStyle(Theme.textPrimary)
             Text(lastRunText)
-                .font(.system(size: Theme.Font.xs))
+                .font(Theme.TextStyle.caption)
                 .foregroundStyle(Theme.textMuted)
         }
         .padding(.horizontal, Theme.Spacing.xs)
@@ -85,7 +84,7 @@ private struct ApprovalsContentView: View {
                         Image(systemName: "checkmark.seal.fill")
                             .foregroundStyle(Theme.success)
                         Text("No repo recommendations waiting.")
-                            .font(.system(size: Theme.Font.sm))
+                            .font(Theme.TextStyle.footnote)
                             .foregroundStyle(Theme.textSecondary)
                     }
                 }
@@ -96,8 +95,14 @@ private struct ApprovalsContentView: View {
                     } label: {
                         RecommendationCard(
                             recommendation: recommendation,
-                            onApprove: { Task { await viewModel.approve(recommendation) } },
-                            onDismiss: { Task { await viewModel.dismiss(recommendation) } }
+                            onApprove: {
+                                Haptics.success()
+                                Task { await viewModel.approve(recommendation) }
+                            },
+                            onDismiss: {
+                                Haptics.warning()
+                                Task { await viewModel.dismiss(recommendation) }
+                            }
                         )
                     }
                     .buttonStyle(.plain)
@@ -128,13 +133,13 @@ private struct ApprovalsContentView: View {
     private func sectionTitle(_ title: String, count: Int) -> some View {
         HStack {
             Text(title)
-                .font(.system(size: Theme.Font.xs, weight: .semibold))
+                .font(Theme.TextStyle.captionSemibold)
                 .foregroundStyle(Theme.textMuted)
                 .tracking(0.5)
                 .textCase(.uppercase)
             Spacer()
             Text("\(count)")
-                .font(.system(size: Theme.Font.xs, weight: .bold))
+                .font(Theme.TextStyle.captionBold)
                 .foregroundStyle(Theme.textMuted)
         }
         .padding(.horizontal, Theme.Spacing.xs)
@@ -170,26 +175,26 @@ private struct RecommendationCard: View {
                 HStack(alignment: .firstTextBaseline) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(recommendation.target.label)
-                            .font(.system(size: Theme.Font.md, weight: .bold))
+                            .font(Theme.TextStyle.subheadlineBold)
                             .foregroundStyle(Theme.textPrimary)
                         Text("\(recommendation.target.owner)/\(recommendation.target.repo)")
-                            .font(.system(size: Theme.Font.xs))
+                            .font(Theme.TextStyle.caption)
                             .foregroundStyle(Theme.textMuted)
                     }
                     Spacer()
                     Text(recommendation.posture.uppercased())
-                        .font(.system(size: Theme.Font.xs, weight: .bold))
+                        .font(Theme.TextStyle.captionBold)
                         .foregroundStyle(postureColor)
                 }
 
                 Text(recommendation.reason)
-                    .font(.system(size: Theme.Font.sm))
+                    .font(Theme.TextStyle.footnote)
                     .foregroundStyle(Theme.textSecondary)
                     .lineLimit(compact ? 2 : 4)
 
                 if !compact {
                     Label(recommendation.action, systemImage: "arrow.right.circle")
-                        .font(.system(size: Theme.Font.sm, weight: .semibold))
+                        .font(Theme.TextStyle.footnoteSemibold)
                         .foregroundStyle(Theme.textPrimary)
                         .lineLimit(3)
 
@@ -217,7 +222,7 @@ private struct RecommendationCard: View {
                     }
                 } else {
                     Text(recommendation.status.capitalized)
-                        .font(.system(size: Theme.Font.xs, weight: .semibold))
+                        .font(Theme.TextStyle.captionSemibold)
                         .foregroundStyle(Theme.textMuted)
                 }
             }
@@ -230,7 +235,7 @@ private struct RecommendationCard: View {
                 .font(.system(size: 9, weight: .semibold))
                 .foregroundStyle(Theme.textMuted)
             Text(value)
-                .font(.system(size: Theme.Font.xs, weight: .bold))
+                .font(Theme.TextStyle.captionBold)
                 .foregroundStyle(Theme.textSecondary)
                 .lineLimit(1)
         }
